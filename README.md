@@ -4,6 +4,7 @@
 
 It is built for people who want a fast, readable answer with source-backed context, not just a one-line AI opinion.
 **Is This True? is built to do more than produce a quick AI guess.**  
+
 It runs a structured, multi-step verification process designed to evaluate claims from multiple perspectives and ground conclusions in current, real-world sources.
 
 ## What You Can Do
