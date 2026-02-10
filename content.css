@@ -1,0 +1,341 @@
+/* ============================================================
+   Is This True? - Content Script Styles
+   Modern refined overlay panel
+   ============================================================ */
+
+/* --- Variables --- */
+:root {
+  --itt-bg: #0f0f10; /* Neutral dark */
+  --itt-surface: #171719; /* Neutral surface */
+  --itt-border: rgba(255, 255, 255, 0.1);
+  --itt-primary: #a1a1aa; /* Zinc 400 */
+  --itt-primary-gradient: linear-gradient(135deg, #3f3f46 0%, #52525b 100%); /* Zinc 700-600 */
+  --itt-text-main: #f8fafc;
+  --itt-text-muted: #a1a1aa;
+  --itt-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+  --itt-radius: 16px;
+  /* Font stack fallback */
+  --itt-font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* --- Panel Container --- */
+#isThisTrue-panel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 2147483647;
+  width: 400px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  font-family: var(--itt-font-family);
+  font-size: 14px;
+  color: var(--itt-text-main);
+  opacity: 0;
+  transform: translateX(20px);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none; /* Initially pass through */
+}
+
+#isThisTrue-panel.itt-visible {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+/* --- Inner Card --- */
+#isThisTrue-panel .itt-inner {
+  background: rgba(20, 20, 22, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--itt-border);
+  border-radius: var(--itt-radius);
+  box-shadow: var(--itt-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  max-height: calc(100vh - 40px);
+}
+
+/* --- Header --- */
+#isThisTrue-panel .itt-header {
+  padding: 16px 20px;
+  background: rgba(26, 26, 28, 0.82);
+  border-bottom: 1px solid var(--itt-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#isThisTrue-panel .itt-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+#isThisTrue-panel .itt-logo {
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+#isThisTrue-panel .itt-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+#isThisTrue-panel .itt-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--itt-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+#isThisTrue-panel .itt-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+/* --- Body --- */
+#isThisTrue-panel .itt-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* --- Preview --- */
+#isThisTrue-panel .itt-preview-text {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid var(--itt-primary);
+  border-radius: 8px;
+  color: var(--itt-text-muted);
+  font-style: italic;
+  margin-bottom: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+#isThisTrue-panel .itt-preview-img {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--itt-border);
+  margin-bottom: 20px;
+}
+
+/* --- Verdict --- */
+#isThisTrue-panel .itt-verdict-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  animation: slideUp 0.4s ease-out;
+}
+
+#isThisTrue-panel .itt-verdict-badge {
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+}
+
+/* --- Confidence --- */
+#isThisTrue-panel .itt-confidence-wrap {
+  margin-bottom: 24px;
+}
+
+#isThisTrue-panel .itt-confidence-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--itt-text-muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+#isThisTrue-panel .itt-confidence-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+#isThisTrue-panel .itt-confidence-fill {
+  height: 100%;
+  background: var(--itt-primary-gradient);
+  border-radius: 100px;
+  transition: width 1s ease-out;
+  position: relative;
+}
+
+/* --- Summary --- */
+#isThisTrue-panel .itt-summary {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--itt-text-main);
+  margin-bottom: 24px;
+}
+
+/* --- Expandable Sections --- */
+#isThisTrue-panel .itt-details-section,
+#isThisTrue-panel .itt-perspectives-section,
+#isThisTrue-panel .itt-sources-section {
+  border: 1px solid var(--itt-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+#isThisTrue-panel .itt-details-toggle,
+#isThisTrue-panel .itt-perspectives-toggle,
+#isThisTrue-panel .itt-sources-toggle {
+  width: 100%;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  color: var(--itt-text-muted);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+#isThisTrue-panel .itt-details-toggle:hover,
+#isThisTrue-panel .itt-perspectives-toggle:hover,
+#isThisTrue-panel .itt-sources-toggle:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--itt-text-main);
+}
+
+#isThisTrue-panel .itt-details-content,
+#isThisTrue-panel .itt-perspectives-content,
+#isThisTrue-panel .itt-sources-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+#isThisTrue-panel .itt-open .itt-details-content,
+#isThisTrue-panel .itt-open .itt-perspectives-content,
+#isThisTrue-panel .itt-open .itt-sources-content {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+#isThisTrue-panel .itt-details-body,
+#isThisTrue-panel .itt-perspective-block,
+#isThisTrue-panel .itt-sources-list {
+  padding: 16px;
+  border-top: 1px solid var(--itt-border);
+  font-size: 13px;
+  color: var(--itt-text-muted);
+  line-height: 1.6;
+}
+
+/* --- Sources --- */
+#isThisTrue-panel .itt-source-link {
+  display: block;
+  color: #818cf8;
+  text-decoration: none;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#isThisTrue-panel .itt-source-link:hover {
+  text-decoration: underline;
+}
+
+/* --- Status Line --- */
+#isThisTrue-panel .itt-status-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--itt-border);
+  border-radius: 12px;
+  margin-top: 12px;
+}
+
+#isThisTrue-panel .itt-status-text {
+  font-size: 14px;
+  color: var(--itt-text-main);
+  font-weight: 500;
+}
+
+#isThisTrue-panel .itt-status-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#isThisTrue-panel .itt-status-subtext {
+  font-size: 12px;
+  color: var(--itt-text-muted);
+}
+
+#isThisTrue-panel .itt-status-line .itt-step-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--itt-text-main);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* --- Loading State (Legacy Steps removed) --- */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- Mobile / Responsive --- */
+@media (max-width: 480px) {
+  #isThisTrue-panel {
+    top: auto;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    transform: translateY(100%);
+    border-radius: 20px 20px 0 0;
+  }
+  
+  #isThisTrue-panel.itt-visible {
+    transform: translateY(0);
+  }
+
+  #isThisTrue-panel .itt-inner {
+    border-radius: 20px 20px 0 0;
+    max-height: 85vh;
+  }
+}
