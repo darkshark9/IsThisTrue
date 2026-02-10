@@ -64,4 +64,6 @@ Read the full policy in `PRIVACY_POLICY.md`.
 
 Chrome Web Store release is in progress.
 
+google-site-verification: google1d4e7b0b68466d2c.html
+
 Until then, you can run it locally through Chrome extensions developer mode.
