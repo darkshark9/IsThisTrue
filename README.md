@@ -59,11 +59,3 @@ For political or controversial claims, it is designed to surface multiple viewpo
 To generate results, the extension processes only content you choose to check (selected text or selected image content).
 
 Read the full policy in `PRIVACY_POLICY.md`.
-
-## Availability
-
-Chrome Web Store release is in progress.
-
-google-site-verification: google1d4e7b0b68466d2c.html
-
-Until then, you can run it locally through Chrome extensions developer mode.
