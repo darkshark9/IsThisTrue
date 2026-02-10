@@ -3,9 +3,19 @@
 `Is This True?` helps you quickly fact-check text and images you see online.
 
 It is built for people who want a fast, readable answer with source-backed context, not just a one-line AI opinion.
-**Is This True? is built to do more than produce a quick AI guess.**  
 
-It runs a structured, multi-step verification process designed to evaluate claims from multiple perspectives and ground conclusions in current, real-world sources.
+## Robust Analysis by Design
+
+**Is This True? is designed to deliver more than a quick AI guess.**  
+Each check follows a structured verification flow intended to increase reliability and reduce one-sided conclusions:
+
+- Breaks a claim into checkable parts so complex statements are not oversimplified.
+- Uses real-time web-grounded verification rather than relying only on model memory.
+- Cross-references multiple source perspectives for broader coverage.
+- Weighs recency and source quality before returning a verdict.
+- Surfaces confidence, reasoning, and references so results are transparent.
+
+For political and controversial topics, it is intentionally built to include multiple viewpoints to better reflect real-world disagreement.
 
 ## What You Can Do
 
