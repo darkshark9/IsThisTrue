@@ -134,6 +134,8 @@ function createSnippingWindows() {
       enableLargerThanScreen: true,
       fullscreen: false,
       fullscreenable: false,
+      // 'type' helps Linux/Mac window managers treat this as an overlay
+      type: 'toolbar', 
       webPreferences: {
         preload: path.join(__dirname, "snipping-preload.js"),
         contextIsolation: true,
@@ -141,10 +143,11 @@ function createSnippingWindows() {
       }
     });
 
+    win.setAlwaysOnTop(true, "screen-saver");
+
     // On macOS, use "screen-saver" level so snipping overlay appears above everything,
     // and make visible on all Spaces (virtual desktops).
     if (process.platform === "darwin") {
-      win.setAlwaysOnTop(true, "screen-saver");
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     }
 
