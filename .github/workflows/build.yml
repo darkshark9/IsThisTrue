@@ -37,14 +37,9 @@ jobs:
         fi
       shell: bash
       working-directory: electron-app
-      env:
-        # macOS code signing (set these as GitHub repository secrets for signed builds):
-        # CSC_LINK: base64-encoded .p12 certificate
-        # CSC_KEY_PASSWORD: certificate password
-        # Without these, the macOS build will be unsigned. Users will need to
-        # right-click > Open to bypass Gatekeeper on first launch.
-        CSC_LINK: ${{ secrets.CSC_LINK }}
-        CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      # Do not set CSC_LINK/CSC_KEY_PASSWORD here so electron-builder does not attempt
+      # real code signing. The Mac build uses afterPack to ad-hoc sign instead.
+      # To use real signing, add secrets and set env in this step.
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
