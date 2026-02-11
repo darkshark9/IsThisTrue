@@ -38,16 +38,10 @@ jobs:
       shell: bash
       working-directory: electron-app
       env:
-        # macOS code signing: set CSC_LINK and CSC_KEY_PASSWORD as GitHub
-        # repository secrets for signed builds. When present, electron-builder
-        # will sign with that certificate and enable hardened runtime + entitlements.
-        # When absent, the build produces an ad-hoc signed app that users can
-        # open via right-click > Open or by running: xattr -cr "/path/to/app.app"
-        CSC_LINK: ${{ secrets.CSC_LINK }}
-        CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        # Skip signing entirely when no certificate is available so the build
-        # doesn't produce a broken signature.
-        CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
+        # Disable code signing when no certificate secrets are set (avoids "damaged" app).
+        # To sign macOS builds, add CSC_LINK and CSC_KEY_PASSWORD as repo secrets
+        # and remove or set to true the line below.
+        CSC_IDENTITY_AUTO_DISCOVERY: false
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -57,3 +51,4 @@ jobs:
           electron-app/dist/*.exe
           electron-app/dist/*.dmg
           electron-app/dist/*.zip
+        if-no-files-found: warn
