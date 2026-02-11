@@ -65,11 +65,11 @@ jobs:
 
         # 1. Sign all native modules, dylibs, and shared objects
         echo "Signing native modules and libs..."
-        find "$APP_PATH" -type f \( -name "*.node" -o -name "*.dylib" -o -name "*.so" \) -print -exec codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - {} \;
+        find "$APP_PATH" -type f \( -name "*.node" -o -name "*.dylib" -o -name "*.so" \) -print -exec codesign --force --options runtime --sign - {} \;
 
         # 2. Sign all frameworks
         echo "Signing frameworks..."
-        find "$APP_PATH/Contents/Frameworks" -name "*.framework" -print -exec codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - {} \;
+        find "$APP_PATH/Contents/Frameworks" -name "*.framework" -print -exec codesign --force --options runtime --sign - {} \;
 
         # 3. Sign all nested helper apps
         echo "Signing helper apps..."
