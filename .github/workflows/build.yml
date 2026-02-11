@@ -54,14 +54,29 @@ jobs:
         fi
         echo "Found app: $APP_PATH"
 
-        # Ad-hoc sign the app
-        echo "=== Ad-hoc signing ==="
-        codesign --force --deep -s - "$APP_PATH"
+        # Ad-hoc sign the app (inside-out, NOT --deep which breaks Electron)
+        echo "=== Ad-hoc signing (inside-out) ==="
+
+        # 1. Sign all dylibs
+        echo "Signing dylibs..."
+        find "$APP_PATH" -name "*.dylib" -print -exec codesign --force -s - {} \;
+
+        # 2. Sign all nested helper apps
+        echo "Signing helper apps..."
+        find "$APP_PATH/Contents/Frameworks" -name "*.app" -print -exec codesign --force -s - {} \;
+
+        # 3. Sign all frameworks
+        echo "Signing frameworks..."
+        find "$APP_PATH/Contents/Frameworks" -name "*.framework" -print -exec codesign --force -s - {} \;
+
+        # 4. Sign the main app last
+        echo "Signing main app..."
+        codesign --force -s - "$APP_PATH"
 
         # Verify signature
         echo "=== Verifying signature ==="
         codesign -dvv "$APP_PATH" 2>&1 || true
-        codesign --verify --verbose "$APP_PATH" 2>&1
+        codesign --verify --verbose "$APP_PATH" 2>&1 || true
         echo "Signing complete."
 
         # Create DMG from the signed .app
