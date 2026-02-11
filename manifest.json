@@ -2,14 +2,11 @@
   "manifest_version": 3,
   "name": "Is This True?",
   "version": "1.0.0",
-  "description": "Fact-check any highlighted text or image using Gemini AI. Simply select text or right-click an image to verify claims instantly.",
+  "description": "Don't trust headlines. Verify them. Fact-check any text or image with real-time web verification and source analysis.",
   "permissions": [
     "contextMenus",
     "activeTab",
     "scripting"
-  ],
-  "host_permissions": [
-    "<all_urls>"
   ],
   "icons": {
     "16": "icons/icon16.png",
@@ -19,19 +16,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "css": ["content.css"],
-      "js": ["content.js"]
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["icons/*"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Is This True?"

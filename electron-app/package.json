@@ -1,0 +1,55 @@
+{
+  "name": "is-this-true",
+  "version": "1.0.0",
+  "description": "Is This True? - Fact-check any text or image with real-time web verification",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.isittrue.app",
+    "productName": "Is This True?",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "api.js",
+      "preload.js",
+      "index.html",
+      "popup.css",
+      "snipping.html",
+      "snipping.js",
+      "snipping-preload.js",
+      "overlay.html",
+      "overlay.css",
+      "overlay-preload.js",
+      "overlay-renderer.js",
+      "icons/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icons/icon128.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "icons/icon128.png",
+      "category": "public.app-category.utilities"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "jimp": "^0.22.12",
+    "screenshot-desktop": "^1.15.3"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}

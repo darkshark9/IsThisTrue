@@ -38,6 +38,12 @@ For every source you cite, you MUST identify:
 - The source name (e.g. "Reuters", "CNN", "Fox News", "CBO", "Nature")
 - The source's general political lean: "left", "center-left", "center", "center-right", "right", or "nonpartisan". Use "nonpartisan" for wire services (AP, Reuters, AFP), government agencies, academic journals, and official data repositories. Be honest and accurate about source leans based on widely accepted media bias assessments.
 Do NOT include URLs in the sources array. URLs are provided separately by the grounding system. Only provide the source name and its political lean.
+Prefer sources that come directly from your web-grounding/search results for this check. Do not invent outlets that were not part of your evidence collection.
+The number of sources MUST scale with topic complexity:
+- Simple single-claim checks with strong consensus: 3-5 sources
+- Standard claims: 5-7 sources
+- Complex, multi-claim, controversial, or heavily disputed topics: 8-10 sources
+Keep sources meaningfully distinct (not duplicate outlet variants), and include a balanced mix when the topic is political/controversial.
 
 STEP 5 -- PROVIDE BALANCED PERSPECTIVES (for political/controversial topics):
 If the topic_type is "political" or "controversial", you MUST fill in the "perspectives" array. Each entry should have a "side" label (e.g. "Conservative view", "Progressive view", "Proponents", "Critics") and a "summary" of what that side argues with supporting evidence. Aim for 2-4 distinct perspectives. Be fair and thorough -- do not strawman any side. Each summary should be concise (2-4 sentences). For non-political/non-controversial topics, set perspectives to null.
@@ -61,7 +67,20 @@ Your confidence score MUST reflect how well-sourced your evidence is:
 - 30-49: Mostly indirect or weak evidence
 - 0-29: Very little evidence found, essentially a guess
 
-Do NOT default to high confidence. If evidence is thin, your confidence should be low even if you lean toward a verdict.`;
+Do NOT default to high confidence. If evidence is thin, your confidence should be low even if you lean toward a verdict.
+
+Before outputting confidence, explicitly evaluate:
+1) number of independent sources,
+2) source quality (primary/nonpartisan vs opinion/secondary),
+3) source agreement vs conflict,
+4) recency for time-sensitive claims,
+5) whether key facts remain unknown.
+
+Scoring constraints:
+- 95+ is rare and requires very strong, recent, multi-source agreement from high-quality sources.
+- If evidence is mixed, confidence should usually stay in the 70-85 range.
+- If verdict is UNVERIFIABLE, confidence should usually be 60-78 (not near-certain).
+- Avoid using the same confidence number repeatedly across unrelated checks.`;
 
 // --- User Prompts (lean -- role & format handled by system instruction + schema) ---
 
@@ -132,6 +151,8 @@ const RESPONSE_SCHEMA = {
     },
     sources: {
       type: "array",
+      minItems: 3,
+      maxItems: 10,
       items: {
         type: "object",
         properties: {
@@ -201,12 +222,17 @@ async function handleCheck(request, env) {
 
   const { type } = body;
 
-  if (type === "text") {
-    return handleTextCheck(body, env);
-  } else if (type === "image") {
-    return handleImageCheck(body, env);
-  } else {
-    return jsonResponse({ error: 'Invalid type. Must be "text" or "image".' }, 400);
+  try {
+    if (type === "text") {
+      return await handleTextCheck(body, env);
+    } else if (type === "image") {
+      return await handleImageCheck(body, env);
+    } else {
+      return jsonResponse({ error: 'Invalid type. Must be "text" or "image".' }, 400);
+    }
+  } catch (err) {
+    const status = err instanceof WorkerError ? err.status : 500;
+    return jsonResponse({ error: err.message || "Internal server error" }, status);
   }
 }
 
@@ -240,20 +266,33 @@ async function handleTextCheck(body, env) {
 
 // --- Image Check ---
 
+const IMAGE_FETCH_TIMEOUT_MS = 30_000;
+const MAX_IMAGE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB
+
 async function handleImageCheck(body, env) {
-  const { imageBase64, mimeType } = body;
+  // Accept either an image URL (preferred) or legacy base64 payload
+  const { imageUrl, imageBase64, mimeType } = body;
 
-  if (!imageBase64 || typeof imageBase64 !== "string") {
-    return jsonResponse({ error: "Missing 'imageBase64' field" }, 400);
-  }
+  let finalBase64;
+  let finalMimeType;
 
-  if (!mimeType || typeof mimeType !== "string") {
-    return jsonResponse({ error: "Missing 'mimeType' field" }, 400);
-  }
-
-  // Limit base64 size (~10MB decoded)
-  if (imageBase64.length > 14_000_000) {
-    return jsonResponse({ error: "Image too large (max ~10MB)" }, 400);
+  if (imageUrl && typeof imageUrl === "string") {
+    // Fetch the image server-side (no CORS restrictions on the worker)
+    const imageData = await fetchImageAsBase64(imageUrl);
+    finalBase64 = imageData.base64;
+    finalMimeType = imageData.mimeType;
+  } else if (imageBase64 && typeof imageBase64 === "string") {
+    // Legacy path: base64 sent directly from the extension
+    if (!mimeType || typeof mimeType !== "string") {
+      return jsonResponse({ error: "Missing 'mimeType' field" }, 400);
+    }
+    if (imageBase64.length > 14_000_000) {
+      return jsonResponse({ error: "Image too large (max ~10MB)" }, 400);
+    }
+    finalBase64 = imageBase64;
+    finalMimeType = mimeType;
+  } else {
+    return jsonResponse({ error: "Missing 'imageUrl' or 'imageBase64' field" }, 400);
   }
 
   const geminiBody = {
@@ -265,8 +304,8 @@ async function handleImageCheck(body, env) {
         { text: IMAGE_PROMPT },
         {
           inlineData: {
-            mimeType: mimeType,
-            data: imageBase64,
+            mimeType: finalMimeType,
+            data: finalBase64,
           },
         },
       ],
@@ -276,6 +315,58 @@ async function handleImageCheck(body, env) {
   };
 
   return callGemini(geminiBody, env);
+}
+
+// --- Image Fetching (server-side) ---
+
+async function fetchImageAsBase64(imageUrl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(imageUrl, { signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") {
+      throw new WorkerError(`Timed out downloading image (${Math.round(IMAGE_FETCH_TIMEOUT_MS / 1000)}s)`, 504);
+    }
+    throw new WorkerError(`Failed to download image: ${err.message}`, 502);
+  }
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    throw new WorkerError(`Image source returned HTTP ${response.status}`, 502);
+  }
+
+  const contentType = response.headers.get("content-type") || "image/png";
+  const mimeType = contentType.split(";")[0].trim();
+  const arrayBuffer = await response.arrayBuffer();
+
+  if (arrayBuffer.byteLength > MAX_IMAGE_SIZE_BYTES) {
+    const sizeMB = Math.round(arrayBuffer.byteLength / (1024 * 1024));
+    const maxMB = Math.round(MAX_IMAGE_SIZE_BYTES / (1024 * 1024));
+    throw new WorkerError(`Image is too large (${sizeMB}MB). Max is ${maxMB}MB.`, 400);
+  }
+
+  // Convert to base64
+  const bytes = new Uint8Array(arrayBuffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  const base64 = btoa(binary);
+
+  return { base64, mimeType };
+}
+
+// Simple error class that carries an HTTP status code
+class WorkerError extends Error {
+  constructor(message, status = 500) {
+    super(message);
+    this.status = status;
+  }
 }
 
 // --- Gemini API Call ---

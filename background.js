@@ -4,9 +4,7 @@
 // ============================================================
 
 const WORKER_URL = "https://is-this-true-api.isittrue.workers.dev";
-const IMAGE_FETCH_TIMEOUT_MS = 30000;
 const WORKER_TIMEOUT_MS = 90000;
-const MAX_IMAGE_SIZE_BYTES = 12 * 1024 * 1024; // 12MB
 
 function createRequestId(type) {
   return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -196,6 +194,136 @@ function applyAllSidesRatings(sources) {
   });
 }
 
+function extractHostname(rawUrl) {
+  try {
+    return new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function getRootDomain(hostname) {
+  if (!hostname) return "";
+  const parts = hostname.split(".").filter(Boolean);
+  if (parts.length < 2) return hostname;
+  return `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+}
+
+function titleToSourceName(title = "") {
+  const trimmed = String(title || "").trim();
+  if (!trimmed) return "";
+  const segments = trimmed.split(/\s+[-|:]\s+/).filter(Boolean);
+  return (segments[segments.length - 1] || trimmed).trim();
+}
+
+function domainToSourceName(hostname) {
+  const host = (hostname || "").toLowerCase();
+  if (!host) return "";
+
+  const knownDomains = [
+    ["reuters.com", "Reuters"],
+    ["apnews.com", "AP News"],
+    ["nytimes.com", "New York Times"],
+    ["washingtonpost.com", "Washington Post"],
+    ["wsj.com", "Wall Street Journal"],
+    ["foxnews.com", "Fox News"],
+    ["cnn.com", "CNN"],
+    ["bbc.com", "BBC"],
+    ["bbc.co.uk", "BBC"],
+    ["theguardian.com", "The Guardian"],
+    ["npr.org", "NPR"],
+    ["politico.com", "Politico"],
+    ["axios.com", "Axios"],
+    ["newsmax.com", "Newsmax"],
+    ["breitbart.com", "Breitbart"],
+    ["dailywire.com", "Daily Wire"],
+    ["huffpost.com", "HuffPost"],
+    ["msnbc.com", "MSNBC"],
+    ["usatoday.com", "USA Today"],
+    ["economist.com", "The Economist"],
+    ["cbsnews.com", "CBS News"],
+    ["nbcnews.com", "NBC News"],
+    ["abcnews.go.com", "ABC News"],
+    ["forbes.com", "Forbes"],
+    ["marketwatch.com", "MarketWatch"],
+    ["propublica.org", "ProPublica"],
+    ["nature.com", "Nature"],
+    ["science.org", "Science"]
+  ];
+
+  for (const [needle, label] of knownDomains) {
+    if (host === needle || host.endsWith(`.${needle}`)) {
+      return label;
+    }
+  }
+
+  const root = getRootDomain(host);
+  if (!root) return "";
+  const base = root.split(".")[0] || root;
+  return base.replace(/[-_]/g, " ").replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function inferLeanFromHostname(hostname) {
+  const host = (hostname || "").toLowerCase();
+  if (!host) return "center";
+  if (host.endsWith(".gov") || host.endsWith(".edu")) return "nonpartisan";
+  if (host.includes("reuters.com") || host.includes("apnews.com")) return "nonpartisan";
+  if (host.includes("who.int") || host.includes("cdc.gov") || host.includes("nih.gov")) return "nonpartisan";
+
+  const inferredName = domainToSourceName(host);
+  const rating = ALLSIDES_RATINGS[normalizeSourceName(inferredName)];
+  return rating || "center";
+}
+
+function buildGroundingAnnotatedSources(groundingSources) {
+  if (!Array.isArray(groundingSources)) return [];
+  const output = [];
+  const seen = new Set();
+
+  for (const src of groundingSources) {
+    const url = String(src?.url || "").trim();
+    if (!url) continue;
+    if (url.includes("vertexaisearch.cloud.google.com")) continue;
+    if (url.includes("googleapis.com/grounding")) continue;
+
+    const hostname = extractHostname(url);
+    const name = titleToSourceName(src?.title || "") || domainToSourceName(hostname);
+    if (!name) continue;
+
+    const key = normalizeSourceName(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    output.push({
+      name,
+      lean: inferLeanFromHostname(hostname)
+    });
+  }
+
+  return output;
+}
+
+function mergeSourcesWithGrounding(modelSources, groundingSources, maxSources = 10) {
+  const merged = [];
+  const seen = new Set();
+
+  const add = (src) => {
+    if (!src || typeof src !== "object" || !src.name) return;
+    const key = normalizeSourceName(src.name);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push({
+      name: src.name,
+      lean: src.lean || "center"
+    });
+  };
+
+  (Array.isArray(modelSources) ? modelSources : []).forEach(add);
+  (Array.isArray(groundingSources) ? groundingSources : []).forEach(add);
+
+  return merged.slice(0, maxSources);
+}
+
 // --- Context Menu Setup ---
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -351,8 +479,13 @@ async function handleTextCheck(text, tabId) {
     sendProgress(tabId, 3, steps, "Generating verdict", "Formatting final result...");
 
     const parsed = parseGeminiResponse(workerResult.response);
-    parsed.sources = applyAllSidesRatings(parsed.sources);
     parsed.groundingSources = workerResult.groundingSources || [];
+    parsed.sources = mergeSourcesWithGrounding(
+      parsed.sources,
+      buildGroundingAnnotatedSources(parsed.groundingSources)
+    );
+    parsed.sources = applyAllSidesRatings(parsed.sources);
+    parsed.confidence = calibrateConfidence(parsed, parsed.groundingSources);
 
     // Brief pause so user sees the final step before results appear
     await new Promise(r => setTimeout(r, 500));
@@ -394,7 +527,6 @@ async function handleImageCheck(imageUrl, tabId) {
 
   const steps = [
     "Analyzing image",
-    "Downloading image data",
     "Searching the web",
     "Cross-referencing sources",
     "Generating verdict"
@@ -419,30 +551,18 @@ async function handleImageCheck(imageUrl, tabId) {
   let tickerTimer = null;
   let stopTicker = () => {};
   try {
-    // Step 2: Downloading image
+    // Step 2: Searching the web (worker fetches the image server-side)
     sendProgress(tabId, 1, steps);
-
-    // Fetch image and convert to base64 in the extension
-    // (extension has <all_urls> permission so it can fetch from any origin)
-    const imageData = await fetchImageAsBase64(imageUrl, requestId);
-    logInfo(requestId, "Image prepared for worker", {
-      mimeType: imageData.mimeType,
-      imageBytes: imageData.byteLength,
-      base64Length: imageData.base64.length
-    });
-
-    // Step 3: Searching the web (API call starts)
-    sendProgress(tabId, 2, steps);
 
     // Advance to "Cross-referencing" and then provide live sub-step updates while waiting.
     crossRefTimer = setTimeout(() => {
-      sendProgress(tabId, 3, steps, "Cross-referencing sources", "Running grounded web verification...");
+      sendProgress(tabId, 2, steps, "Cross-referencing sources", "Running grounded web verification...");
     }, 5000);
     tickerTimer = setTimeout(() => {
       stopTicker = startLiveProgressTicker(
         tabId,
         steps,
-        3,
+        2,
         requestId,
         [
           "Cross-referencing sources",
@@ -455,22 +575,27 @@ async function handleImageCheck(imageUrl, tabId) {
       );
     }, 8000);
 
+    // Send the image URL to the worker; it fetches and processes server-side
     const workerResult = await callWorker({
       type: "image",
-      imageBase64: imageData.base64,
-      mimeType: imageData.mimeType
+      imageUrl: imageUrl
     }, requestId);
 
     clearTimeout(crossRefTimer);
     clearTimeout(tickerTimer);
     stopTicker();
 
-    // Step 5: Generating verdict (response received, parsing)
-    sendProgress(tabId, 4, steps, "Generating verdict", "Finalizing structured output...");
+    // Step 4: Generating verdict (response received, parsing)
+    sendProgress(tabId, 3, steps, "Generating verdict", "Finalizing structured output...");
 
     const parsed = parseGeminiResponse(workerResult.response);
-    parsed.sources = applyAllSidesRatings(parsed.sources);
     parsed.groundingSources = workerResult.groundingSources || [];
+    parsed.sources = mergeSourcesWithGrounding(
+      parsed.sources,
+      buildGroundingAnnotatedSources(parsed.groundingSources)
+    );
+    parsed.sources = applyAllSidesRatings(parsed.sources);
+    parsed.confidence = calibrateConfidence(parsed, parsed.groundingSources);
 
     // Brief pause so user sees the final step before results appear
     await new Promise(r => setTimeout(r, 500));
@@ -558,67 +683,6 @@ async function callWorker(body, requestId = "worker") {
   return data;
 }
 
-// --- Image Fetching ---
-
-async function fetchImageAsBase64(imageUrl, requestId = "image") {
-  const startedAt = performance.now();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
-
-  logInfo(requestId, "Fetching image bytes", { imageUrl });
-  const response = await fetch(imageUrl, { signal: controller.signal }).catch(err => {
-    if (err?.name === "AbortError") {
-      throw new Error(`Timed out while downloading image (${Math.round(IMAGE_FETCH_TIMEOUT_MS / 1000)}s)`);
-    }
-    throw err;
-  });
-  clearTimeout(timeout);
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image (${response.status})`);
-  }
-
-  const blob = await response.blob();
-  const mimeType = blob.type || "image/png";
-  const byteLength = blob.size;
-  logInfo(requestId, "Downloaded image blob", {
-    mimeType,
-    byteLength,
-    elapsedMs: Math.round(performance.now() - startedAt)
-  });
-
-  if (byteLength > MAX_IMAGE_SIZE_BYTES) {
-    throw new Error(`Image is too large (${Math.round(byteLength / (1024 * 1024))}MB). Please try an image under ${Math.round(MAX_IMAGE_SIZE_BYTES / (1024 * 1024))}MB.`);
-  }
-
-  const arrayBuffer = await blob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-  const base64 = await uint8ArrayToBase64(uint8Array);
-  logInfo(requestId, "Converted image to base64", {
-    base64Length: base64.length,
-    elapsedMs: Math.round(performance.now() - startedAt)
-  });
-
-  return { base64, mimeType, byteLength };
-}
-
-async function uint8ArrayToBase64(uint8Array) {
-  const chunkSize = 0x8000;
-  let binary = "";
-
-  for (let i = 0; i < uint8Array.length; i += chunkSize) {
-    const chunk = uint8Array.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-
-    // Yield occasionally so long conversions do not freeze worker execution.
-    if (i > 0 && i % (chunkSize * 128) === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-  }
-
-  return btoa(binary);
-}
-
 // --- Response Parser ---
 // With native JSON mode (responseMimeType + responseSchema) on the worker,
 // the response is guaranteed valid JSON. We keep a lightweight fallback
@@ -651,6 +715,51 @@ function parseGeminiResponse(responseText) {
   }
 }
 
+function calibrateConfidence(result, groundingSources = []) {
+  const base = Math.min(100, Math.max(0, parseInt(result?.confidence, 10) || 0));
+  const verdict = String(result?.verdict || "").toUpperCase();
+  const sources = Array.isArray(result?.sources) ? result.sources : [];
+
+  const uniqueNames = new Set(
+    sources
+      .map(s => (s?.name || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const uniqueLeans = new Set(
+    sources
+      .map(s => (s?.lean || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const groundingCount = Array.isArray(groundingSources) ? groundingSources.length : 0;
+  let adjusted = base;
+
+  // Keep confidence generally high, but avoid "95 every time" by anchoring
+  // very-high outputs to observable evidence strength.
+  const evidenceScore = (uniqueNames.size * 2) + groundingCount + (uniqueLeans.size * 2);
+
+  if (base >= 95) {
+    if (evidenceScore >= 18) {
+      adjusted = 96 + Math.min(2, Math.floor((evidenceScore - 18) / 3)); // 96-98
+    } else if (evidenceScore >= 13) {
+      adjusted = 93 + Math.min(2, Math.floor((evidenceScore - 13) / 2)); // 93-95
+    } else if (evidenceScore >= 9) {
+      adjusted = 90 + Math.min(2, Math.floor((evidenceScore - 9) / 2)); // 90-92
+    } else {
+      adjusted = 86 + Math.min(2, Math.floor(evidenceScore / 4)); // 86-88
+    }
+  }
+
+  // Still prevent unrealistic certainty when there is almost no evidence.
+  if (uniqueNames.size <= 1 && groundingCount <= 1) adjusted = Math.min(adjusted, 84);
+
+  // UNVERIFIABLE should stay high enough to feel useful, but not near-certain.
+  if (verdict === "UNVERIFIABLE") adjusted = Math.min(adjusted, 78);
+
+  return Math.round(Math.min(100, Math.max(0, adjusted)));
+}
+
 function fallbackResult(text) {
   return {
     verdict: "UNVERIFIABLE",
@@ -663,19 +772,26 @@ function fallbackResult(text) {
 }
 
 // --- Helper: Send message to tab ---
+// Content script is injected programmatically (not via manifest content_scripts)
+// so we always ensure it is present before sending a message.
 
-function sendToTab(tabId, message) {
-  chrome.tabs.sendMessage(tabId, message).catch(() => {
-    chrome.scripting.executeScript({
-      target: { tabId },
-      files: ["content.js"]
-    }).then(() => {
-      chrome.scripting.insertCSS({
+async function sendToTab(tabId, message) {
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    // Content script not yet injected on this tab -- inject it now.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["content.js"]
+      });
+      await chrome.scripting.insertCSS({
         target: { tabId },
         files: ["content.css"]
-      }).then(() => {
-        chrome.tabs.sendMessage(tabId, message);
       });
-    }).catch(console.error);
-  });
+      await chrome.tabs.sendMessage(tabId, message);
+    } catch (err) {
+      console.error("[IsThisTrue] Failed to inject content script", err);
+    }
+  }
 }

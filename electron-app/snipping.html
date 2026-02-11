@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Snipping - Is This True?</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; cursor: crosshair; }
+    body {
+      background: rgba(0, 0, 0, 0.35);
+      -webkit-app-region: no-drag;
+    }
+    #snipping-hint {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      background: rgba(20, 20, 22, 0.95);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      pointer-events: none;
+      z-index: 999999;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    }
+    #snipping-rect {
+      position: fixed;
+      border: 2px solid #8b5cf6;
+      background: rgba(139, 92, 246, 0.08);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+      z-index: 999998;
+      display: none;
+    }
+    #snipping-cancel {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 24px;
+      background: rgba(239, 68, 68, 0.9);
+      border: none;
+      border-radius: 10px;
+      color: white;
+      font-size: 13px;
+      cursor: pointer;
+      z-index: 999999;
+    }
+    #snipping-cancel:hover { background: rgba(239, 68, 68, 1); }
+  </style>
+</head>
+<body>
+  <div id="snipping-hint">Drag to select an area to fact-check. Release to capture.</div>
+  <div id="snipping-rect"></div>
+  <button type="button" id="snipping-cancel">Cancel (Esc)</button>
+  <script src="snipping.js"></script>
+</body>
+</html>

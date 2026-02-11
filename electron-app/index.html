@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Is This True?</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="bg-orbs" aria-hidden="true">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+
+    <div class="header">
+      <div class="header-logo-wrap">
+        <div class="header-logo">
+          <img src="icons/icon128.png" alt="Is This True? logo" class="logo-img" />
+        </div>
+        <div class="logo-pulse"></div>
+      </div>
+      <div class="header-text">
+        <h1>Is This True?</h1>
+        <p class="tagline">Robust truth verification</p>
+      </div>
+    </div>
+
+    <div class="status-badge animate-in" style="--delay: 0.1s">
+      <span class="status-dot"></span>
+      <span class="status-label">Ready</span>
+    </div>
+
+    <div class="section how-to-use animate-in" style="--delay: 0.2s">
+      <h2>How to Use</h2>
+      <div class="steps-list">
+        <div class="step" style="--step-delay: 0.25s">
+          <div class="step-num">1</div>
+          <p>Press <strong>Ctrl+Shift+F9</strong> (Mac: <strong>Cmd+Shift+F9</strong>) to start snipping</p>
+        </div>
+        <div class="step" style="--step-delay: 0.35s">
+          <div class="step-num">2</div>
+          <p><strong>Drag</strong> to select the area on screen you want to fact-check</p>
+        </div>
+        <div class="step" style="--step-delay: 0.45s">
+          <div class="step-num">3</div>
+          <p>View the <strong>fact-check results</strong> in the overlay panel</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
