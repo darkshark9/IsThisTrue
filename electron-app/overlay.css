@@ -43,6 +43,7 @@ body {
   position: fixed;
   top: 20px;
   right: 20px;
+  left: auto;
   z-index: 2147483647;
   width: 400px;
   max-width: calc(100vw - 40px);
@@ -52,8 +53,16 @@ body {
   color: var(--itt-text-main);
   opacity: 0;
   transform: translateX(20px);
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
+}
+
+#isThisTrue-panel.itt-dragging {
+  transition: none;
+}
+
+#isThisTrue-panel.itt-restored-position {
+  transform: none;
 }
 
 #isThisTrue-panel.itt-visible {

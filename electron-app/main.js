@@ -364,6 +364,45 @@ function triggerSnippingMode() {
   createSnippingWindows();
 }
 
+function getLaunchAtLogin() {
+  try {
+    return app.getLoginItemSettings().openAtLogin === true;
+  } catch {
+    return false;
+  }
+}
+
+function setLaunchAtLogin(enable) {
+  try {
+    app.setLoginItemSettings({ openAtLogin: enable });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildTrayContextMenu(launchAtLoginOverride) {
+  const launchAtLogin = launchAtLoginOverride !== undefined ? launchAtLoginOverride : getLaunchAtLogin();
+  return Menu.buildFromTemplate([
+    { label: "Show Is This True?", click: () => { if (mainWindow) mainWindow.show(); else createWindow(); } },
+    { label: "Snip Region", click: () => { triggerSnippingMode(); } },
+    { type: "separator" },
+    {
+      type: "checkbox",
+      label: "Launch at startup",
+      checked: launchAtLogin,
+      click: () => {
+        const next = !getLaunchAtLogin();
+        if (setLaunchAtLogin(next)) {
+          tray.setContextMenu(buildTrayContextMenu(next));
+        }
+      }
+    },
+    { type: "separator" },
+    { label: "Quit", click: () => { app.isQuitting = true; app.quit(); } }
+  ]);
+}
+
 function createTray() {
   const iconPath = getIconPath();
   const icon = nativeImage.createFromPath(iconPath);
@@ -390,18 +429,17 @@ function createTray() {
     });
   }
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: "Show Is This True?", click: () => { if (mainWindow) mainWindow.show(); else createWindow(); } },
-    { label: "Snip Region", click: () => { triggerSnippingMode(); } },
-    { type: "separator" },
-    { label: "Quit", click: () => { app.isQuitting = true; app.quit(); } }
-  ]);
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(buildTrayContextMenu());
 }
 
 app.whenReady().then(() => {
   createWindow();
   createTray();
+
+  // Launch at PC/login startup (user can toggle in tray menu)
+  try {
+    app.setLoginItemSettings({ openAtLogin: true });
+  } catch (_) {}
 
   const hotkey = "CommandOrControl+Shift+X";
   globalShortcut.register(hotkey, () => {

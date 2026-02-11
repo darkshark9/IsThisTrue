@@ -6,6 +6,7 @@
   const PANEL_ID = "isThisTrue-panel";
   const CONTAINER_ID = "isThisTrue-panel-container";
   let HEADER_LOGO_URL = "";
+  let lastPanelPosition = null;
 
   const container = () => document.getElementById(CONTAINER_ID);
 
@@ -53,7 +54,15 @@
     const panel = document.createElement("div");
     panel.id = PANEL_ID;
     panel.innerHTML = innerHTML;
+    if (lastPanelPosition) {
+      panel.style.right = "auto";
+      panel.style.left = lastPanelPosition.left + "px";
+      panel.style.top = lastPanelPosition.top + "px";
+      panel.classList.add("itt-restored-position");
+    }
     cnt.appendChild(panel);
+
+    setupDesktopDrag(panel);
 
     // Enable mouse interaction when hovering the panel
     panel.addEventListener("mouseenter", () => {
@@ -108,6 +117,69 @@
     }
   }
 
+  function setupDesktopDrag(panel) {
+    const dragHandle = panel.querySelector(".itt-drag-handle");
+    const header = panel.querySelector(".itt-header");
+    const dragTargets = [dragHandle, header].filter(Boolean);
+    let startClientX = 0, startClientY = 0, startPanelLeft = 0, startPanelTop = 0;
+
+    function clampPosition(left, top, width, height) {
+      const L = Math.max(0, Math.min(left, window.innerWidth - width));
+      const T = Math.max(0, Math.min(top, window.innerHeight - height));
+      return { left: L, top: T };
+    }
+
+    function onMouseDown(e) {
+      if (e.button !== 0) return;
+      if (header && e.target.closest(".itt-close-btn")) return;
+      e.preventDefault();
+      const rect = panel.getBoundingClientRect();
+      startClientX = e.clientX;
+      startClientY = e.clientY;
+      startPanelLeft = rect.left;
+      startPanelTop = rect.top;
+      panel.style.right = "auto";
+      panel.classList.add("itt-dragging");
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    }
+
+    function onMouseMove(e) {
+      const deltaX = e.clientX - startClientX;
+      const deltaY = e.clientY - startClientY;
+      const { left, top } = clampPosition(
+        startPanelLeft + deltaX,
+        startPanelTop + deltaY,
+        panel.offsetWidth,
+        panel.offsetHeight
+      );
+      panel.style.left = left + "px";
+      panel.style.top = top + "px";
+    }
+
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      panel.classList.remove("itt-dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      const rect = panel.getBoundingClientRect();
+      lastPanelPosition = { left: rect.left, top: rect.top };
+    }
+
+    dragTargets.forEach((el) => el.addEventListener("mousedown", onMouseDown));
+    const cleanup = () => dragTargets.forEach((el) => el.removeEventListener("mousedown", onMouseDown));
+    if (typeof panel.__ittCleanup === "function") {
+      const prev = panel.__ittCleanup;
+      panel.__ittCleanup = () => { cleanup(); prev(); };
+    } else {
+      panel.__ittCleanup = cleanup;
+    }
+  }
+
   function setupSwipeToDismiss(panel) {
     const dragHandle = panel.querySelector(".itt-drag-handle");
     const header = panel.querySelector(".itt-header");
@@ -145,11 +217,13 @@
     triggers.forEach(t => t.addEventListener("touchstart", onTouchStart, { passive: true }));
     document.addEventListener("touchmove", onTouchMove, { passive: false });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
-    panel.__ittCleanup = () => {
+    const swipeCleanup = () => {
       triggers.forEach(t => t.removeEventListener("touchstart", onTouchStart));
       document.removeEventListener("touchmove", onTouchMove);
       document.removeEventListener("touchend", onTouchEnd);
     };
+    const prevCleanup = panel.__ittCleanup;
+    panel.__ittCleanup = prevCleanup ? () => { swipeCleanup(); prevCleanup(); } : swipeCleanup;
   }
 
   function getVerdictConfig(verdict) {
