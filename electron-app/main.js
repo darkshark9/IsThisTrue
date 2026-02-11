@@ -3,7 +3,7 @@
 // Snipping mode, overlay window, API orchestration
 // ============================================================
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, Menu, systemPreferences, dialog } = require("electron");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const screenshot = require("screenshot-desktop");
@@ -86,6 +86,7 @@ function createOverlayWindow() {
     resizable: false,
     movable: false,
     fullscreen: false,
+    fullscreenable: false,
     hasShadow: false,
     enableLargerThanScreen: true,
     webPreferences: {
@@ -94,6 +95,13 @@ function createOverlayWindow() {
       nodeIntegration: false
     }
   });
+
+  // On macOS, use "screen-saver" level to appear above all windows including fullscreen apps.
+  // Ensure overlay is visible on all Spaces (virtual desktops).
+  if (process.platform === "darwin") {
+    overlayWindow.setAlwaysOnTop(true, "screen-saver");
+    overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
 
   overlayWindow.setIgnoreMouseEvents(true, { forward: true });
 
@@ -125,12 +133,20 @@ function createSnippingWindows() {
       hasShadow: false,
       enableLargerThanScreen: true,
       fullscreen: false,
+      fullscreenable: false,
       webPreferences: {
         preload: path.join(__dirname, "snipping-preload.js"),
         contextIsolation: true,
         nodeIntegration: false
       }
     });
+
+    // On macOS, use "screen-saver" level so snipping overlay appears above everything,
+    // and make visible on all Spaces (virtual desktops).
+    if (process.platform === "darwin") {
+      win.setAlwaysOnTop(true, "screen-saver");
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
 
     win.loadFile(path.join(__dirname, "snipping.html"));
     snippingWindows.push(win);
@@ -292,10 +308,17 @@ async function captureRegionAsBase64(rect) {
     fullBuffer = await screenshot({ format: "png" });
   }
   const img = await Jimp.read(fullBuffer);
-  const cropX = Math.max(0, x - bounds.x);
-  const cropY = Math.max(0, y - bounds.y);
-  const cropW = Math.min(width, img.bitmap.width - cropX);
-  const cropH = Math.min(height, img.bitmap.height - cropY);
+
+  // Compute actual scale factor from the captured image vs logical display bounds.
+  // On macOS Retina (scaleFactor=2), the screenshot is at physical resolution (e.g. 3840x2400)
+  // while all coordinates (mouse events, display.bounds) are in logical pixels (e.g. 1920x1200).
+  // On Windows at 100% scaling, sf will be 1. This also handles Windows HiDPI correctly.
+  const sf = display.bounds.width > 0 ? (img.bitmap.width / display.bounds.width) : 1;
+
+  const cropX = Math.max(0, Math.round((x - bounds.x) * sf));
+  const cropY = Math.max(0, Math.round((y - bounds.y) * sf));
+  const cropW = Math.min(Math.round(width * sf), img.bitmap.width - cropX);
+  const cropH = Math.min(Math.round(height * sf), img.bitmap.height - cropY);
   if (cropW <= 0 || cropH <= 0) {
     throw new Error("Invalid capture region");
   }
@@ -304,30 +327,69 @@ async function captureRegionAsBase64(rect) {
   return "data:image/png;base64," + (base64.replace ? base64.replace(/^data:image\/\w+;base64,/, "") : base64);
 }
 
+function checkScreenCapturePermission() {
+  if (process.platform !== "darwin") return true;
+  try {
+    const status = systemPreferences.getMediaAccessStatus("screen");
+    if (status === "granted") return true;
+    // "not-determined" means the user hasn't been prompted yet -- on macOS the system
+    // may show its own prompt on first capture attempt, so we let it proceed.
+    if (status === "not-determined") return true;
+    // "denied" or "restricted" -- user explicitly denied or MDM restricted
+    dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Screen Recording Permission Required",
+      message: "Is This True? needs screen recording permission to capture screen regions.",
+      detail: "Please open System Settings > Privacy & Security > Screen Recording and enable \"Is This True?\". You may need to restart the app after granting permission.",
+      buttons: ["Open System Settings", "Cancel"],
+      defaultId: 0
+    }).then(({ response }) => {
+      if (response === 0) {
+        const { exec } = require("child_process");
+        exec("open x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+      }
+    });
+    return false;
+  } catch {
+    // If the API isn't available (very old Electron), proceed and hope for the best
+    return true;
+  }
+}
+
 function triggerSnippingMode() {
+  if (!checkScreenCapturePermission()) return;
   createSnippingWindows();
 }
 
 function createTray() {
   const iconPath = getIconPath();
   const icon = nativeImage.createFromPath(iconPath);
-  const trayIcon = icon.resize({ width: 16, height: 16 });
+  // macOS menu bar icons are typically 22x22; Windows system tray uses 16x16
+  const traySize = process.platform === "darwin" ? 22 : 16;
+  const trayIcon = icon.resize({ width: traySize, height: traySize });
   tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
-  tray.setToolTip("Is This True? - Snipping: Ctrl+Shift+F9 (or Cmd+Shift+F9 on Mac)");
-  tray.on("click", () => {
-    if (mainWindow) {
-      mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
-    } else {
-      createWindow();
-    }
-  });
-  tray.on("double-click", () => {
-    if (mainWindow) mainWindow.show();
-    else createWindow();
-  });
+  tray.setToolTip("Is This True? - Snipping: " + (process.platform === "darwin" ? "Cmd+Shift+X" : "Ctrl+Shift+X"));
+
+  // On macOS, left-clicking a tray icon with a context menu shows the menu,
+  // so click/double-click handlers to toggle the window would conflict.
+  // On Windows, click toggles visibility and context menu is right-click only.
+  if (process.platform !== "darwin") {
+    tray.on("click", () => {
+      if (mainWindow) {
+        mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+      } else {
+        createWindow();
+      }
+    });
+    tray.on("double-click", () => {
+      if (mainWindow) mainWindow.show();
+      else createWindow();
+    });
+  }
 
   const contextMenu = Menu.buildFromTemplate([
     { label: "Show Is This True?", click: () => { if (mainWindow) mainWindow.show(); else createWindow(); } },
+    { label: "Snip Region", click: () => { triggerSnippingMode(); } },
     { type: "separator" },
     { label: "Quit", click: () => { app.isQuitting = true; app.quit(); } }
   ]);
@@ -338,7 +400,7 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
-  const hotkey = process.platform === "darwin" ? "Command+Shift+F9" : "Control+Shift+F9";
+  const hotkey = "CommandOrControl+Shift+X";
   globalShortcut.register(hotkey, () => {
     triggerSnippingMode();
   });
