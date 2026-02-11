@@ -34,11 +34,12 @@
       "target": "nsis",
       "icon": "icons/IconLarge.png"
     },
+    "afterPack": "./afterPack.js",
     "mac": {
       "target": "dmg",
       "icon": "icons/IconLarge.png",
       "category": "public.app-category.utilities",
-      "identity": "-",
+      "identity": null,
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Is This True? needs screen recording access to capture screen regions for fact-checking."
       }
