@@ -32,11 +32,11 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "icons/icon128.png"
+      "icon": "icons/IconLarge.png"
     },
     "mac": {
       "target": "dmg",
-      "icon": "icons/icon128.png",
+      "icon": "icons/IconLarge.png",
       "category": "public.app-category.utilities"
     },
     "nsis": {
