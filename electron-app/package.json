@@ -38,10 +38,7 @@
       "target": "dmg",
       "icon": "icons/IconLarge.png",
       "category": "public.app-category.utilities",
-      "entitlements": "entitlements.mac.plist",
-      "entitlementsInherit": "entitlements.mac.plist",
-      "hardenedRuntime": false,
-      "afterPack": "mac-adhoc-sign.js",
+      "identity": null,
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Is This True? needs screen recording access to capture screen regions for fact-checking."
       }

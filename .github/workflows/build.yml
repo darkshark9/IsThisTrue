@@ -37,9 +37,11 @@ jobs:
         fi
       shell: bash
       working-directory: electron-app
-      # Do not set CSC_LINK/CSC_KEY_PASSWORD here so electron-builder does not attempt
-      # real code signing. The Mac build uses afterPack to ad-hoc sign instead.
-      # To use real signing, add secrets and set env in this step.
+      env:
+        # Explicitly disable code signing auto-discovery on macOS CI runners.
+        # Without this, electron-builder may attempt to sign using any identity
+        # found on the runner, which would fail and corrupt the build.
+        CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
