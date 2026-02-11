@@ -38,7 +38,7 @@
       "target": "dmg",
       "icon": "icons/IconLarge.png",
       "category": "public.app-category.utilities",
-      "identity": null,
+      "identity": "-",
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Is This True? needs screen recording access to capture screen regions for fact-checking."
       }
