@@ -38,10 +38,13 @@ jobs:
       shell: bash
       working-directory: electron-app
       env:
-        # Disable code signing when no certificate secrets are set (avoids "damaged" app).
-        # To sign macOS builds, add CSC_LINK and CSC_KEY_PASSWORD as repo secrets
-        # and remove or set to true the line below.
-        CSC_IDENTITY_AUTO_DISCOVERY: false
+        # macOS code signing (set these as GitHub repository secrets for signed builds):
+        # CSC_LINK: base64-encoded .p12 certificate
+        # CSC_KEY_PASSWORD: certificate password
+        # Without these, the macOS build will be unsigned. Users will need to
+        # right-click > Open to bypass Gatekeeper on first launch.
+        CSC_LINK: ${{ secrets.CSC_LINK }}
+        CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -51,4 +54,3 @@ jobs:
           electron-app/dist/*.exe
           electron-app/dist/*.dmg
           electron-app/dist/*.zip
-        if-no-files-found: warn

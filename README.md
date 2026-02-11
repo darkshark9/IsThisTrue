@@ -54,6 +54,15 @@ For political or controversial claims, it is designed to surface multiple viewpo
 - For high-stakes decisions (health, legal, financial, safety), always verify with primary sources and qualified experts.
 - Breaking news and developing events can change quickly, which may affect outcomes.
 
+## Mac Desktop App (Unsigned Builds)
+
+The desktop app is built with ad-hoc signing so you don't need to run any Terminal commands. After installing from the DMG:
+
+1. Open **Is This True?** from Applications (or drag it there first from the DMG).
+2. The first time only, macOS may show **"Is This True?" cannot be opened because the developer cannot be verified.** Then **right-click the app > Open**, and click **Open** in the dialog. After that it will open normally.
+
+See `electron-app/MAC_INSTALL.md` for full Mac install and permission steps.
+
 ## Privacy
 
 To generate results, the extension processes only content you choose to check (selected text or selected image content).
