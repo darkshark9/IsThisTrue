@@ -20,7 +20,7 @@ const {
 
 let mainWindow = null;
 let overlayWindow = null;
-let snippingWindow = null;
+let snippingWindows = [];
 let tray = null;
 let resultTargetWindow = null;
 
@@ -101,38 +101,48 @@ function createOverlayWindow() {
   return overlayWindow;
 }
 
-function createSnippingWindow() {
-  if (snippingWindow && !snippingWindow.isDestroyed()) {
-    snippingWindow.show();
-    return snippingWindow;
+function createSnippingWindows() {
+  if (snippingWindows.length > 0) {
+    snippingWindows.forEach(w => {
+      if (!w.isDestroyed()) w.show();
+    });
+    return;
   }
 
-  const cursorPoint = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursorPoint);
+  const displays = screen.getAllDisplays();
+  displays.forEach(display => {
+    const win = new BrowserWindow({
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      hasShadow: false,
+      enableLargerThanScreen: true,
+      fullscreen: false,
+      webPreferences: {
+        preload: path.join(__dirname, "snipping-preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    });
 
-  snippingWindow = new BrowserWindow({
-    x: display.bounds.x,
-    y: display.bounds.y,
-    width: display.bounds.width,
-    height: display.bounds.height,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    hasShadow: false,
-    enableLargerThanScreen: true,
-    fullscreen: false,
-    webPreferences: {
-      preload: path.join(__dirname, "snipping-preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false
+    win.loadFile(path.join(__dirname, "snipping.html"));
+    snippingWindows.push(win);
+  });
+}
+
+function closeSnippingWindows() {
+  snippingWindows.forEach(w => {
+    if (w && !w.isDestroyed()) {
+      w.close();
     }
   });
-
-  snippingWindow.loadFile(path.join(__dirname, "snipping.html"));
-  snippingWindow.on("closed", () => { snippingWindow = null; });
-  return snippingWindow;
+  snippingWindows = [];
 }
 
 function sendToRenderer(message) {
@@ -294,7 +304,7 @@ async function captureRegionAsBase64(rect) {
 }
 
 function triggerSnippingMode() {
-  createSnippingWindow();
+  createSnippingWindows();
 }
 
 function createTray() {
@@ -333,10 +343,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on("itt-snipping-capture", async (event, rect) => {
-    if (snippingWindow && !snippingWindow.isDestroyed()) {
-      snippingWindow.close();
-      snippingWindow = null;
-    }
+    closeSnippingWindows();
     const win = createOverlayWindow();
     resultTargetWindow = overlayWindow;
     const runCheck = (dataUrl) => {
@@ -363,10 +370,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on("itt-snipping-cancel", () => {
-    if (snippingWindow && !snippingWindow.isDestroyed()) {
-      snippingWindow.close();
-      snippingWindow = null;
-    }
+    closeSnippingWindows();
   });
 
   ipcMain.on("itt-overlay-close", () => {
