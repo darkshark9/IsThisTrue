@@ -40,40 +40,49 @@ jobs:
       env:
         CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-    - name: Verify macOS code signature inside DMG
+    - name: Sign macOS app and create DMG
       if: runner.os == 'macOS'
       run: |
-        DMG_PATH=$(find dist -name "*.dmg" -print -quit)
-        if [ -z "$DMG_PATH" ]; then
-          echo "ERROR: No DMG found!"
-          exit 1
-        fi
-        echo "=== Mounting DMG: $DMG_PATH ==="
-        MOUNT_DIR=$(hdiutil attach "$DMG_PATH" -nobrowse | tail -1 | awk '{print $NF}')
-        if [ -z "$MOUNT_DIR" ]; then
-          echo "ERROR: Failed to mount DMG"
-          exit 1
-        fi
-        echo "Mounted at: $MOUNT_DIR"
-        APP_PATH=$(find "$MOUNT_DIR" -name "*.app" -maxdepth 1 -print -quit)
+        set -e
+
+        # Find the .app that electron-builder produced (dir target)
+        APP_PATH=$(find dist -name "*.app" -maxdepth 3 -print -quit)
         if [ -z "$APP_PATH" ]; then
-          echo "ERROR: No .app found inside DMG!"
-          hdiutil detach "$MOUNT_DIR" -quiet
+          echo "ERROR: No .app found in dist/"
+          ls -laR dist/
           exit 1
         fi
-        echo "=== Verifying signature of: $APP_PATH ==="
-        codesign -dvv "$APP_PATH" 2>&1
-        SIGN_STATUS=$?
-        echo ""
-        echo "=== Signature assessment ==="
-        codesign --verify --verbose "$APP_PATH" 2>&1 || true
-        echo ""
-        hdiutil detach "$MOUNT_DIR" -quiet
-        if [ $SIGN_STATUS -ne 0 ]; then
-          echo "FAIL: App inside DMG is NOT signed!"
-          exit 1
-        fi
-        echo "PASS: App inside DMG is signed."
+        echo "Found app: $APP_PATH"
+
+        # Ad-hoc sign the app
+        echo "=== Ad-hoc signing ==="
+        codesign --force --deep -s - "$APP_PATH"
+
+        # Verify signature
+        echo "=== Verifying signature ==="
+        codesign -dvv "$APP_PATH" 2>&1 || true
+        codesign --verify --verbose "$APP_PATH" 2>&1
+        echo "Signing complete."
+
+        # Create DMG from the signed .app
+        echo "=== Creating DMG ==="
+        DMG_NAME="Is-This-True-1.0.0-arm64.dmg"
+
+        # Create a temporary folder with the app and an Applications symlink
+        STAGE_DIR=$(mktemp -d)
+        cp -R "$APP_PATH" "$STAGE_DIR/"
+        ln -s /Applications "$STAGE_DIR/Applications"
+
+        hdiutil create \
+          -volname "Is This True?" \
+          -srcfolder "$STAGE_DIR" \
+          -ov \
+          -format UDZO \
+          "dist/$DMG_NAME"
+
+        rm -rf "$STAGE_DIR"
+        echo "DMG created: dist/$DMG_NAME"
+        ls -lh "dist/$DMG_NAME"
       working-directory: electron-app
 
     - name: Upload Artifacts

@@ -34,9 +34,8 @@
       "target": "nsis",
       "icon": "icons/IconLarge.png"
     },
-    "afterPack": "./afterPack.js",
     "mac": {
-      "target": "dmg",
+      "target": "dir",
       "icon": "icons/IconLarge.png",
       "category": "public.app-category.utilities",
       "identity": null,
