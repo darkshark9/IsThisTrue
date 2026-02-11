@@ -54,24 +54,30 @@ jobs:
         fi
         echo "Found app: $APP_PATH"
 
-        # Ad-hoc sign the app (inside-out, NOT --deep which breaks Electron)
+        # Use the entitlements file we created
+        ENTITLEMENTS="entitlements.mac.plist"
+        if [ ! -f "$ENTITLEMENTS" ]; then
+          echo "ERROR: Entitlements file not found at $ENTITLEMENTS"
+          exit 1
+        fi
+
         echo "=== Ad-hoc signing (inside-out) ==="
 
-        # 1. Sign all dylibs
-        echo "Signing dylibs..."
-        find "$APP_PATH" -name "*.dylib" -print -exec codesign --force -s - {} \;
+        # 1. Sign all native modules, dylibs, and shared objects
+        echo "Signing native modules and libs..."
+        find "$APP_PATH" -type f \( -name "*.node" -o -name "*.dylib" -o -name "*.so" \) -print -exec codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - {} \;
 
-        # 2. Sign all nested helper apps
-        echo "Signing helper apps..."
-        find "$APP_PATH/Contents/Frameworks" -name "*.app" -print -exec codesign --force -s - {} \;
-
-        # 3. Sign all frameworks
+        # 2. Sign all frameworks
         echo "Signing frameworks..."
-        find "$APP_PATH/Contents/Frameworks" -name "*.framework" -print -exec codesign --force -s - {} \;
+        find "$APP_PATH/Contents/Frameworks" -name "*.framework" -print -exec codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - {} \;
+
+        # 3. Sign all nested helper apps
+        echo "Signing helper apps..."
+        find "$APP_PATH/Contents/Frameworks" -name "*.app" -print -exec codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - {} \;
 
         # 4. Sign the main app last
         echo "Signing main app..."
-        codesign --force -s - "$APP_PATH"
+        codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP_PATH"
 
         # Verify signature
         echo "=== Verifying signature ==="
