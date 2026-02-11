@@ -46,8 +46,8 @@ jobs:
       run: |
         set -e
 
-        # Find the .app that electron-builder produced (dir target)
-        APP_PATH=$(find dist -name "*.app" -maxdepth 3 -print -quit)
+        # Find the .app that electron-builder produced (BSD/macOS find-compatible)
+        APP_PATH=$(find dist -type d -name "*.app" -prune -print | head -n 1)
         if [ -z "$APP_PATH" ]; then
           echo "ERROR: No .app found in dist/"
           ls -laR dist/
@@ -88,7 +88,8 @@ jobs:
 
         # Create DMG from the signed .app
         echo "=== Creating DMG ==="
-        DMG_NAME="Is-This-True-1.0.0-arm64.dmg"
+        APP_VERSION=$(node -p "require('./package.json').version")
+        DMG_NAME="Is-This-True-${APP_VERSION}-arm64.dmg"
 
         # Create a temporary folder with the app and an Applications symlink
         STAGE_DIR=$(mktemp -d)

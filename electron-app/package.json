@@ -7,11 +7,11 @@
     "start": "electron .",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac"
+    "build:mac": "electron-builder --mac --arm64"
   },
   "build": {
     "appId": "com.isittrue.app",
-    "productName": "Is This True?",
+    "productName": "Is This True",
     "directories": {
       "output": "dist"
     },
@@ -40,13 +40,13 @@
       "category": "public.app-category.utilities",
       "identity": null,
       "extendInfo": {
+        "CFBundleDisplayName": "Is This True?",
         "NSScreenCaptureUsageDescription": "Is This True? needs screen recording access to capture screen regions for fact-checking."
       }
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "compression": "maximum"
+      "allowToChangeInstallationDirectory": true
     }
   },
   "dependencies": {

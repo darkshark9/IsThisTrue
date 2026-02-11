@@ -434,7 +434,12 @@ function createTray() {
 
 app.whenReady().then(() => {
   createWindow();
-  createTray();
+  try {
+    createTray();
+  } catch (err) {
+    // Avoid fatal startup crash when tray icon creation fails.
+    console.error("Tray initialization failed:", err);
+  }
 
   // Launch at PC/login startup (user can toggle in tray menu)
   try {
