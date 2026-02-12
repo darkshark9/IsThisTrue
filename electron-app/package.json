@@ -30,6 +30,9 @@
       "overlay-renderer.js",
       "icons/**"
     ],
+    "asarUnpack": [
+      "node_modules/screenshot-desktop/lib/win32/**"
+    ],
     "win": {
       "target": "nsis",
       "icon": "icons/IconLarge.png"

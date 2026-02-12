@@ -693,26 +693,172 @@ function parseGeminiResponse(responseText) {
     return fallbackResult("No response received.");
   }
 
+  const rawText = String(responseText).trim();
   try {
-    const parsed = JSON.parse(responseText.trim());
+    const parsed = JSON.parse(rawText);
+    return normalizeParsedGeminiResult(parsed, rawText);
+  } catch {}
 
-    // Normalize sources: new schema returns objects {name, url, lean}, keep as-is
-    const sources = Array.isArray(parsed.sources) ? parsed.sources.filter(Boolean) : [];
-
-    return {
-      verdict: parsed.verdict || "UNVERIFIABLE",
-      confidence: Math.min(100, Math.max(0, parseInt(parsed.confidence) || 0)),
-      summary: parsed.summary || "Unable to determine.",
-      details: parsed.details || "No details available.",
-      reasoning: parsed.reasoning || "",
-      topicType: parsed.topic_type || "other",
-      perspectives: Array.isArray(parsed.perspectives) ? parsed.perspectives.filter(Boolean) : null,
-      corrections: parsed.corrections || null,
-      sources: sources
-    };
-  } catch {
-    return fallbackResult(responseText);
+  // Common model failure mode: JSON wrapped in markdown fences or pre/post prose.
+  const extracted = extractBestEffortJsonObject(rawText);
+  if (extracted) {
+    try {
+      const parsed = JSON.parse(extracted);
+      return normalizeParsedGeminiResult(parsed, rawText);
+    } catch {}
   }
+
+  // Last resort: salvage structured fields from plain text response.
+  const heuristic = parseHeuristicGeminiText(rawText);
+  if (heuristic) {
+    return heuristic;
+  }
+
+  return fallbackResult(rawText);
+}
+
+function normalizeParsedGeminiResult(parsed, rawText) {
+  // Normalize sources: new schema returns objects {name, url, lean}, keep as-is
+  const sources = Array.isArray(parsed?.sources) ? parsed.sources.filter(Boolean) : [];
+  const verdict = String(parsed?.verdict || "UNVERIFIABLE").toUpperCase().trim();
+  const topicType = String(parsed?.topic_type || parsed?.topicType || "other").toLowerCase().trim();
+
+  return {
+    verdict,
+    confidence: Math.min(100, Math.max(0, parseInt(parsed?.confidence, 10) || 0)),
+    summary: String(parsed?.summary || "").trim() || "Unable to determine.",
+    details: String(parsed?.details || "").trim() || "No details available.",
+    reasoning: String(parsed?.reasoning || "").trim(),
+    topicType: topicType || "other",
+    perspectives: Array.isArray(parsed?.perspectives) ? parsed.perspectives.filter(Boolean) : null,
+    corrections: parsed?.corrections || null,
+    sources,
+    rawModelResponse: rawText
+  };
+}
+
+function extractBestEffortJsonObject(text) {
+  if (!text) return null;
+  const candidates = [];
+
+  // Candidate 1: markdown fenced blocks (```json ... ```).
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let fenceMatch;
+  while ((fenceMatch = fenceRegex.exec(text)) !== null) {
+    const candidate = String(fenceMatch[1] || "").trim();
+    if (candidate.startsWith("{") && candidate.endsWith("}")) {
+      candidates.push(candidate);
+    }
+  }
+
+  // Candidate 2: balanced JSON objects found anywhere in the text.
+  for (const obj of extractBalancedJsonObjects(text)) {
+    candidates.push(obj);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") {
+        return candidate;
+      }
+    } catch {
+      // continue trying remaining candidates
+    }
+  }
+  return null;
+}
+
+function extractBalancedJsonObjects(text) {
+  const objects = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+
+    if (ch === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+function parseHeuristicGeminiText(text) {
+  if (!text) return null;
+  const verdictMatch = text.match(/\b(verdict|rating)\s*[:\-]\s*(true|false|partially\s+true|unverifiable)\b/i);
+  const confidenceMatch = text.match(/\bconfidence\s*[:\-]\s*(\d{1,3})\s*%?/i);
+  const summaryMatch = text.match(/\bsummary\s*[:\-]\s*(.+)/i);
+  const detailsMatch = text.match(/\b(details|analysis|reasoning)\s*[:\-]\s*([\s\S]+)/i);
+
+  const compactText = text.replace(/\s+/g, " ").trim();
+  const firstSentence = compactText.split(/(?<=[.!?])\s+/)[0] || "";
+  const summary = summaryMatch
+    ? summaryMatch[1].trim()
+    : firstSentence || text.split("\n").map(line => line.trim()).find(Boolean) || "Unable to determine.";
+  const details = detailsMatch ? detailsMatch[2].trim() : text;
+  const parsedConfidence = parseInt(confidenceMatch?.[1], 10);
+  const confidence = Math.min(100, Math.max(0, Number.isFinite(parsedConfidence) ? parsedConfidence : 62));
+  const verdict = verdictMatch
+    ? verdictMatch[2].replace(/\s+/g, " ").toUpperCase()
+    : inferVerdictFromText(compactText);
+
+  return {
+    verdict,
+    confidence,
+    summary,
+    details,
+    reasoning: "",
+    topicType: "other",
+    perspectives: null,
+    corrections: null,
+    sources: [],
+    rawModelResponse: text
+  };
+}
+
+function inferVerdictFromText(compactText) {
+  const text = (compactText || "").toLowerCase();
+  if (!text) return "UNVERIFIABLE";
+  if (/\bpartially true\b/.test(text) || /\bmixed\b/.test(text) || /\bpartly accurate\b/.test(text)) {
+    return "PARTIALLY TRUE";
+  }
+  if (/\bfalse\b/.test(text) || /\binaccurate\b/.test(text) || /\bmisleading\b/.test(text)) {
+    return "FALSE";
+  }
+  if (/\btrue\b/.test(text) || /\baccurate\b/.test(text) || /\bcorrect\b/.test(text)) {
+    return "TRUE";
+  }
+  return "UNVERIFIABLE";
 }
 
 function calibrateConfidence(result, groundingSources = []) {

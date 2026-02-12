@@ -1,6 +1,12 @@
 node_modules/
 dist/
+# Never commit credentials or env files
 .env
+.env.*
+!.env.example
+*.pem
+secrets.json
+*.key
 .DS_Store
 Thumbs.db
 .idea/
