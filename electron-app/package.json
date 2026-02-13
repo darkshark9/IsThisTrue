@@ -1,6 +1,6 @@
 {
   "name": "is-this-true",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Is This True? - Fact-check any text or image with real-time web verification",
   "main": "main.js",
   "scripts": {

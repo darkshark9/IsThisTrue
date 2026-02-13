@@ -3,7 +3,7 @@
 // Snipping mode, overlay window, API orchestration
 // ============================================================
 
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, Menu, systemPreferences, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, nativeImage, screen, Menu, systemPreferences, dialog, clipboard } = require("electron");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const screenshot = require("screenshot-desktop");
@@ -11,6 +11,7 @@ const Jimp = require("jimp");
 const {
   createRequestId,
   callWorker,
+  callWorkerAiImage,
   parseGeminiResponse,
   applyAllSidesRatings,
   buildGroundingAnnotatedSources,
@@ -23,6 +24,7 @@ let overlayWindow = null;
 let snippingWindows = [];
 let tray = null;
 let resultTargetWindow = null;
+let snippingMode = "factcheck"; // "factcheck" | "ai-detect"
 
 function getIconPath() {
   return path.join(__dirname, "icons", "icon128.png");
@@ -220,7 +222,18 @@ async function handleTextCheck(text) {
       ], 3000);
     }, 7000);
 
-    const workerResult = await callWorker({ type: "text", text }, requestId);
+    let workerResult;
+    try {
+      workerResult = await callWorker({ type: "text", text }, requestId);
+    } catch (err) {
+      if (err.message && err.message.includes("timed out")) {
+        // Retry once
+        sendProgress(2, steps, "Web crawler stuck, retrying...", "One of the web crawlers got stuck. Retrying...");
+        workerResult = await callWorker({ type: "text", text }, requestId + "-retry");
+      } else {
+        throw err;
+      }
+    }
     clearTimeout(crossRefTimer);
     clearTimeout(tickerTimer);
     stopTicker();
@@ -269,7 +282,18 @@ async function handleImageCheck(imageUrl) {
       ], 3000);
     }, 8000);
 
-    const workerResult = await callWorker({ type: "image", imageUrl }, requestId);
+    let workerResult;
+    try {
+      workerResult = await callWorker({ type: "image", imageUrl }, requestId);
+    } catch (err) {
+      if (err.message && err.message.includes("timed out")) {
+        // Retry once
+        sendProgress(2, steps, "Web crawler stuck, retrying...", "One of the web crawlers got stuck. Retrying...");
+        workerResult = await callWorker({ type: "image", imageUrl }, requestId + "-retry");
+      } else {
+        throw err;
+      }
+    }
     clearTimeout(crossRefTimer);
     clearTimeout(tickerTimer);
     stopTicker();
@@ -293,6 +317,34 @@ async function handleImageCheck(imageUrl) {
     if (crossRefTimer) clearTimeout(crossRefTimer);
     if (tickerTimer) clearTimeout(tickerTimer);
     stopTicker();
+  }
+}
+
+async function handleAiImageCheck(imageDataUrl) {
+  const steps = ["Analyzing image", "Checking AI detection", "Done"];
+  sendToRenderer({
+    action: "showLoading",
+    type: "ai-image",
+    content: imageDataUrl,
+    steps,
+    currentStep: 0,
+    iconUrl: getIconUrl()
+  });
+  try {
+    sendProgress(1, steps);
+    const result = await callWorkerAiImage(imageDataUrl);
+    sendProgress(2, steps, "Checking AI detection", "Finalizing...");
+    await new Promise(r => setTimeout(r, 300));
+    sendToRenderer({
+      action: "showAiImageResult",
+      content: imageDataUrl,
+      result,
+      iconUrl: getIconUrl()
+    });
+  } catch (error) {
+    sendToRenderer({ action: "showError", error: `Error: ${error.message}`, iconUrl: getIconUrl() });
+  } finally {
+    resultTargetWindow = null;
   }
 }
 
@@ -359,9 +411,45 @@ function checkScreenCapturePermission() {
   }
 }
 
-function triggerSnippingMode() {
+function triggerSnippingMode(mode = "factcheck") {
   if (!checkScreenCapturePermission()) return;
+  snippingMode = mode === "ai-detect" ? "ai-detect" : "factcheck";
   createSnippingWindows();
+}
+
+function readClipboardImageAsDataUrl() {
+  try {
+    const image = clipboard.readImage();
+    if (!image || image.isEmpty()) {
+      return null;
+    }
+    return image.toDataURL();
+  } catch {
+    return null;
+  }
+}
+
+function triggerClipboardOrSnip(mode = "factcheck") {
+  const normalizedMode = mode === "ai-detect" ? "ai-detect" : "factcheck";
+  const clipboardImageDataUrl = readClipboardImageAsDataUrl();
+  if (clipboardImageDataUrl) {
+    const win = createOverlayWindow();
+    resultTargetWindow = overlayWindow;
+    const runCheck = () => {
+      if (normalizedMode === "ai-detect") {
+        handleAiImageCheck(clipboardImageDataUrl);
+      } else {
+        handleImageCheck(clipboardImageDataUrl);
+      }
+    };
+    if (win.webContents.isLoading()) {
+      win.webContents.once("did-finish-load", runCheck);
+    } else {
+      runCheck();
+    }
+    return;
+  }
+  triggerSnippingMode(normalizedMode);
 }
 
 function getLaunchAtLogin() {
@@ -410,7 +498,8 @@ function createTray() {
   const traySize = process.platform === "darwin" ? 22 : 16;
   const trayIcon = icon.resize({ width: traySize, height: traySize });
   tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
-  tray.setToolTip("Is This True? - Snipping: " + (process.platform === "darwin" ? "Cmd+Shift+X" : "Ctrl+Shift+X"));
+  const mod = process.platform === "darwin" ? "Cmd" : "Ctrl";
+  tray.setToolTip(`Is This True? - Fact-check: ${mod}+Shift+X | AI check: ${mod}+Shift+A (uses copied image first)`);
 
   // On macOS, left-clicking a tray icon with a context menu shows the menu,
   // so click/double-click handlers to toggle the window would conflict.
@@ -446,35 +535,54 @@ app.whenReady().then(() => {
     app.setLoginItemSettings({ openAtLogin: true });
   } catch (_) {}
 
-  const hotkey = "CommandOrControl+Shift+X";
-  globalShortcut.register(hotkey, () => {
-    triggerSnippingMode();
+  globalShortcut.register("CommandOrControl+Shift+X", () => {
+    triggerClipboardOrSnip("factcheck");
+  });
+  globalShortcut.register("CommandOrControl+Shift+A", () => {
+    triggerClipboardOrSnip("ai-detect");
   });
 
   ipcMain.on("itt-snipping-capture", async (event, rect) => {
     closeSnippingWindows();
+
+    // Fix: Capture screen BEFORE creating/showing the overlay window to avoid obstruction
+    let dataUrl;
+    try {
+      dataUrl = await captureRegionAsBase64(rect);
+    } catch (err) {
+      // If capture fails, create window to show error
+      const win = createOverlayWindow();
+      resultTargetWindow = overlayWindow;
+      const showErr = () => {
+        sendToRenderer({ action: "showError", error: `Capture failed: ${err.message}`, iconUrl: getIconUrl() });
+        resultTargetWindow = null;
+      };
+      if (win.webContents.isLoading()) {
+        win.webContents.once("did-finish-load", showErr);
+      } else {
+        showErr();
+      }
+      return;
+    }
+
+    // Capture success: Create/show window now
     const win = createOverlayWindow();
     resultTargetWindow = overlayWindow;
-    const runCheck = (dataUrl) => {
-      handleImageCheck(dataUrl);
-    };
-    const showErr = (msg) => {
-      sendToRenderer({ action: "showError", error: msg, iconUrl: getIconUrl() });
-      resultTargetWindow = null;
-    };
-    try {
-      const dataUrl = await captureRegionAsBase64(rect);
-      if (win.webContents.isLoading()) {
-        win.webContents.once("did-finish-load", () => runCheck(dataUrl));
+    const mode = snippingMode;
+    snippingMode = "factcheck";
+
+    const runCheck = () => {
+      if (mode === "ai-detect") {
+        handleAiImageCheck(dataUrl);
       } else {
-        runCheck(dataUrl);
+        handleImageCheck(dataUrl);
       }
-    } catch (err) {
-      if (win.webContents.isLoading()) {
-        win.webContents.once("did-finish-load", () => showErr(`Capture failed: ${err.message}`));
-      } else {
-        showErr(`Capture failed: ${err.message}`);
-      }
+    };
+
+    if (win.webContents.isLoading()) {
+      win.webContents.once("did-finish-load", runCheck);
+    } else {
+      runCheck();
     }
   });
 

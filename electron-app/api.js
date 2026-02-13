@@ -144,6 +144,8 @@ function mergeSourcesWithGrounding(modelSources, groundingSources, maxSources = 
   return merged.slice(0, maxSources);
 }
 
+const WORKER_AI_IMAGE_TIMEOUT_MS = 30000;
+
 async function callWorker(body, requestId = "worker") {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), WORKER_TIMEOUT_MS);
@@ -173,6 +175,56 @@ async function callWorker(body, requestId = "worker") {
     throw new Error(data.error || `Request failed (${response.status})`);
   }
   return data;
+}
+
+async function callWorkerAiImage(imageDataUrlOrPayload) {
+  const body = typeof imageDataUrlOrPayload === "string"
+    ? { imageBase64: imageDataUrlOrPayload }
+    : imageDataUrlOrPayload;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WORKER_AI_IMAGE_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${WORKER_URL}/api/check-ai-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") {
+      throw new Error("AI image check timed out. Please try again.");
+    }
+    throw new Error(`Network error: ${err.message}`);
+  }
+  clearTimeout(timeout);
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`Server returned an invalid response (HTTP ${response.status}). Please try again.`);
+  }
+  if (!response.ok) {
+    throw new Error(data.error || `AI image check failed (${response.status})`);
+  }
+  return parseAiImageResponse(data);
+}
+
+function parseAiImageResponse(data) {
+  const aiGeneratedLikelihood = Math.min(100, Math.max(0, Number(data.aiGeneratedLikelihood) || 0));
+  const verdict = String(data.verdict || "UNCERTAIN").toUpperCase().replace(/\s+/g, "_");
+  const summary = String(data.summary || data.details || "").trim() || "AI-generated likelihood could not be determined.";
+  const details = String(data.details || data.summary || "").trim() || summary;
+  const confidence = Math.min(100, Math.max(0, parseInt(data.confidence, 10) || 70));
+  return {
+    verdict: verdict === "AI_GENERATED" ? "AI_GENERATED" : verdict === "HUMAN_LIKELY" ? "HUMAN_LIKELY" : "UNCERTAIN",
+    aiGeneratedLikelihood,
+    confidence,
+    summary,
+    details,
+    raw: data.raw || null
+  };
 }
 
 function parseGeminiResponse(responseText) {
@@ -370,7 +422,9 @@ function fallbackResult(text) {
 module.exports = {
   createRequestId,
   callWorker,
+  callWorkerAiImage,
   parseGeminiResponse,
+  parseAiImageResponse,
   applyAllSidesRatings,
   buildGroundingAnnotatedSources,
   mergeSourcesWithGrounding,

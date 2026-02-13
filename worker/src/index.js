@@ -193,17 +193,21 @@ export default {
       return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
-    // Validate the API key secret is configured
-    if (!env.GEMINI_API_KEY) {
-      return jsonResponse({ error: "Server misconfigured: missing API key" }, 500);
-    }
-
-    // Parse the request
     const url = new URL(request.url);
     const path = url.pathname;
 
     if (path === "/api/check") {
+      if (!env.GEMINI_API_KEY) {
+        return jsonResponse({ error: "Server misconfigured: missing API key" }, 500);
+      }
       return handleCheck(request, env);
+    }
+
+    if (path === "/api/check-ai-image") {
+      if (!env.SIGHTENGINE_API_USER || !env.SIGHTENGINE_API_SECRET) {
+        return jsonResponse({ error: "Server misconfigured: missing SightEngine credentials" }, 500);
+      }
+      return handleCheckAiImage(request, env);
     }
 
     return jsonResponse({ error: "Not found" }, 404);
@@ -359,6 +363,141 @@ async function fetchImageAsBase64(imageUrl) {
   const base64 = btoa(binary);
 
   return { base64, mimeType };
+}
+
+// --- AI-Generated Image Detection (SightEngine) ---
+
+const SIGHTENGINE_URL = "https://api.sightengine.com/1.0/check.json";
+const SIGHTENGINE_TIMEOUT_MS = 25_000;
+const MAX_AI_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB for SightEngine
+
+async function handleCheckAiImage(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Invalid JSON body" }, 400);
+  }
+
+  const { imageUrl, imageBase64, mimeType } = body;
+  let sightEngineResult;
+
+  try {
+    if (imageUrl && typeof imageUrl === "string") {
+      if (imageUrl.trim().toLowerCase().startsWith("blob:")) {
+        return jsonResponse({
+          error: "This image cannot be checked from this page (blob URL). Try opening the image in its own tab and right-click again, or use the desktop app to snip the image."
+        }, 400);
+      }
+      sightEngineResult = await callSightEngineWithUrl(imageUrl, env);
+    } else if (imageBase64 && typeof imageBase64 === "string") {
+      const dataUrlMatch = imageBase64.match(/^data:(image\/\w+);base64,(.+)$/);
+      const rawBase64 = dataUrlMatch ? dataUrlMatch[2] : imageBase64.replace(/^data:image\/\w+;base64,/, "");
+      const useMime = (dataUrlMatch && dataUrlMatch[1]) || (mimeType && typeof mimeType === "string" ? mimeType : "image/png");
+      const sizeEstimate = (rawBase64.length * 3) / 4;
+      if (sizeEstimate > MAX_AI_IMAGE_SIZE_BYTES) {
+        return jsonResponse({ error: "Image too large for AI detection (max 10MB)" }, 400);
+      }
+      sightEngineResult = await callSightEngineWithBinary(rawBase64, useMime, env);
+    } else {
+      return jsonResponse({ error: "Missing 'imageUrl' or 'imageBase64'" }, 400);
+    }
+  } catch (err) {
+    const status = err instanceof WorkerError ? err.status : 500;
+    return jsonResponse({ error: err.message || "AI image check failed" }, status);
+  }
+
+  const normalized = normalizeSightEngineResponse(sightEngineResult);
+  return jsonResponse(normalized);
+}
+
+async function callSightEngineWithUrl(imageUrl, env) {
+  const params = new URLSearchParams({
+    url: imageUrl,
+    models: "genai",
+    api_user: env.SIGHTENGINE_API_USER,
+    api_secret: env.SIGHTENGINE_API_SECRET,
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SIGHTENGINE_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${SIGHTENGINE_URL}?${params.toString()}`, { method: "GET", signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") {
+      throw new WorkerError("AI image check timed out. Please try again.", 504);
+    }
+    throw new WorkerError(`SightEngine request failed: ${err.message}`, 502);
+  }
+  clearTimeout(timeout);
+  const data = await response.json().catch(() => ({}));
+  if (data.status === "failure" || (response.ok && data.type && typeof data.type.ai_generated !== "number")) {
+    const msg = data.error?.message || data.message || `SightEngine error (${response.status})`;
+    throw new WorkerError(msg, response.ok ? 502 : response.status);
+  }
+  if (!response.ok) {
+    throw new WorkerError(data.message || `SightEngine returned ${response.status}`, response.status);
+  }
+  return data;
+}
+
+async function callSightEngineWithBinary(base64Data, mimeType, env) {
+  const binary = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+  if (binary.length > MAX_AI_IMAGE_SIZE_BYTES) {
+    throw new WorkerError("Image too large for AI detection (max 10MB)", 400);
+  }
+  const blob = new Blob([binary], { type: mimeType });
+  const form = new FormData();
+  form.append("media", blob, "image." + (mimeType === "image/png" ? "png" : "jpg"));
+  form.append("models", "genai");
+  form.append("api_user", env.SIGHTENGINE_API_USER);
+  form.append("api_secret", env.SIGHTENGINE_API_SECRET);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SIGHTENGINE_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(SIGHTENGINE_URL, { method: "POST", body: form, signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") {
+      throw new WorkerError("AI image check timed out. Please try again.", 504);
+    }
+    throw new WorkerError(`SightEngine request failed: ${err.message}`, 502);
+  }
+  clearTimeout(timeout);
+  const data = await response.json().catch(() => ({}));
+  if (data.status === "failure" || (response.ok && data.type && typeof data.type.ai_generated !== "number")) {
+    const msg = data.error?.message || data.message || `SightEngine error (${response.status})`;
+    throw new WorkerError(msg, response.ok ? 502 : response.status);
+  }
+  if (!response.ok) {
+    throw new WorkerError(data.message || `SightEngine returned ${response.status}`, response.status);
+  }
+  return data;
+}
+
+function normalizeSightEngineResponse(data) {
+  const score = typeof data.type?.ai_generated === "number" ? data.type.ai_generated : 0;
+  const aiGeneratedLikelihood = Math.round(score * 100);
+  let verdict = "UNCERTAIN";
+  if (score >= 0.7) verdict = "AI_GENERATED";
+  else if (score <= 0.3) verdict = "HUMAN_LIKELY";
+  const details =
+    verdict === "AI_GENERATED"
+      ? "This image is likely AI-generated."
+      : verdict === "HUMAN_LIKELY"
+        ? "This image appears to be human-made (photo or non-AI art)."
+        : "The result is inconclusive; the image may be AI-generated or human-made.";
+  return {
+    aiGeneratedLikelihood,
+    verdict,
+    details,
+    summary: details,
+    confidence: aiGeneratedLikelihood >= 70 || aiGeneratedLikelihood <= 30 ? Math.min(95, 50 + Math.abs(aiGeneratedLikelihood - 50)) : 60,
+    raw: { ai_generated: score },
+  };
 }
 
 // Simple error class that carries an HTTP status code

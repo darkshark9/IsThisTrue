@@ -19,5 +19,11 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Is This True?"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

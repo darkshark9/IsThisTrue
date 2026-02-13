@@ -34,6 +34,9 @@
         case "showResult":
           showPanel(buildResultHTML(message.type, message.content, message.result));
           break;
+        case "showAiImageResult":
+          showPanel(buildAiImageResultHTML(message.content, message.result));
+          break;
         case "showError":
           showPanel(buildErrorHTML(message.error));
           break;
@@ -234,6 +237,13 @@
     return { color: "#94A3B8", bg: "rgba(148, 163, 184, 0.1)", icon: "?", label: "Unverifiable" };
   }
 
+  function getAiVerdictConfig(verdict) {
+    const v = (verdict || "").toUpperCase();
+    if (v === "AI_GENERATED") return { color: "#EF4444", bg: "rgba(239, 68, 68, 0.12)", icon: "&#9888;", label: "AI Generated" };
+    if (v === "HUMAN_LIKELY") return { color: "#34D399", bg: "rgba(16, 185, 129, 0.1)", icon: "&#10003;", label: "Human likely" };
+    return { color: "#94A3B8", bg: "rgba(148, 163, 184, 0.1)", icon: "?", label: "Uncertain" };
+  }
+
   function buildConfidenceBar(confidence, color) {
     return `
       <div class="itt-confidence-wrap">
@@ -264,9 +274,11 @@
   }
 
   function buildLoadingHTML(type, content, steps, currentStep) {
-    const preview = type === "image"
+    const isImage = type === "image" || type === "ai-image";
+    const preview = isImage
       ? `<img src="${escapeHtml(content)}" class="itt-preview-img" />`
       : `<p class="itt-preview-text">"${escapeHtml(truncate(content, 150))}"</p>`;
+    const checkLabel = type === "ai-image" ? "Checking if AI-generated..." : `Checking ${type}...`;
     steps = steps || ["Analyzing", "Searching the web", "Verifying"];
     currentStep = currentStep || 0;
     const percent = Math.round(((currentStep + 1) / steps.length) * 90);
@@ -286,7 +298,7 @@
           <button class="itt-close-btn" aria-label="Close">&times;</button>
         </div>
         <div class="itt-body">
-          <div class="itt-checking-label">Checking ${type}...</div>
+          <div class="itt-checking-label">${escapeHtml(checkLabel)}</div>
           ${preview}
           <div class="itt-progress-bar">
             <div class="itt-progress-fill" style="width: ${percent}%"></div>
@@ -474,6 +486,45 @@
           </div>
           ${buildPerspectivesHTML(result.perspectives)}
           ${buildSourcesHTML(result)}
+        </div>
+      </div>`;
+  }
+
+  function buildAiImageResultHTML(content, result) {
+    const vc = getAiVerdictConfig(result.verdict);
+    const likelihood = Math.min(100, Math.max(0, Number(result.aiGeneratedLikelihood) || 0));
+    const logo = HEADER_LOGO_URL ? `<img src="${escapeHtml(HEADER_LOGO_URL)}" class="itt-logo-img" alt="Is This True logo" />` : "";
+    return `
+      <div class="itt-inner">
+        ${buildDragHandle()}
+        <div class="itt-header">
+          <div class="itt-header-brand">
+            <div class="itt-logo-wrap">${logo}<div class="itt-logo-glow"></div></div>
+            <div class="itt-header-text">
+              <span class="itt-header-title">Is This True?</span>
+              <span class="itt-header-tagline">AI-generated image check</span>
+            </div>
+          </div>
+          <button class="itt-close-btn" aria-label="Close">&times;</button>
+        </div>
+        <div class="itt-body">
+          <img src="${escapeHtml(content)}" class="itt-preview-img" />
+          <div class="itt-verdict-row">
+            <div class="itt-verdict-badge" style="background: ${vc.bg}; color: ${vc.color}; border: 1px solid ${vc.color}30;">
+              <span class="itt-verdict-icon">${vc.icon}</span>
+              <span class="itt-verdict-label">${vc.label}</span>
+            </div>
+          </div>
+          <div class="itt-confidence-wrap">
+            <div class="itt-confidence-label">
+              <span>AI-generated likelihood</span>
+              <span class="itt-confidence-value">${likelihood}%</span>
+            </div>
+            <div class="itt-confidence-track">
+              <div class="itt-confidence-fill" style="width: ${likelihood}%; background: linear-gradient(90deg, ${vc.color}, ${vc.color}CC);"></div>
+            </div>
+          </div>
+          <div class="itt-summary">${escapeHtml(result.summary || result.details || "")}</div>
         </div>
       </div>`;
   }

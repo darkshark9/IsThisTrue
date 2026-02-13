@@ -5,6 +5,7 @@
 
 const WORKER_URL = "https://is-this-true-api.isittrue.workers.dev";
 const WORKER_TIMEOUT_MS = 90000;
+const WORKER_AI_IMAGE_TIMEOUT_MS = 30000;
 
 function createRequestId(type) {
   return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -335,7 +336,13 @@ chrome.runtime.onInstalled.addListener(() => {
 
   chrome.contextMenus.create({
     id: "isThisTrue-image",
-    title: 'Is This True? - Check this image',
+    title: 'Is This True?',
+    contexts: ["image"]
+  });
+
+  chrome.contextMenus.create({
+    id: "isThisTrue-ai-image",
+    title: 'Is This AI?',
     contexts: ["image"]
   });
 });
@@ -350,6 +357,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       await handleTextCheck(info.selectionText, tab.id);
     } else if (info.menuItemId === "isThisTrue-image" && info.srcUrl) {
       await handleImageCheck(info.srcUrl, tab.id);
+    } else if (info.menuItemId === "isThisTrue-ai-image" && info.srcUrl) {
+      await handleAiImageCheck(info.srcUrl, tab.id);
     }
   } catch (error) {
     console.error("[IsThisTrue] Unhandled context menu error", error);
@@ -357,10 +366,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // --- Message Handler (from content script) ---
+// Do not return true: we never call sendResponse, so returning true would make Chrome
+// wait for an async response and then throw when the channel closes.
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender?.tab?.id;
-  if (!tabId) return true;
+  if (!tabId) return;
 
   if (message.action === "checkText") {
     handleTextCheck(message.text, tabId).catch(error => {
@@ -379,7 +390,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     });
   }
-  return true;
 });
 
 // --- Progress Helper ---
@@ -627,6 +637,93 @@ async function handleImageCheck(imageUrl, tabId) {
     stopTicker();
     clearInterval(keepAlive);
   }
+}
+
+// --- AI-Generated Image Check ---
+
+async function handleAiImageCheck(imageUrl, tabId) {
+  const requestId = createRequestId("ai-image");
+  logInfo(requestId, "Started AI image check", { tabId, imageUrl });
+
+  const steps = ["Analyzing image", "Checking AI detection", "Done"];
+
+  sendToTab(tabId, {
+    action: "showLoading",
+    type: "ai-image",
+    content: imageUrl,
+    steps,
+    currentStep: 0
+  });
+
+  const keepAlive = setInterval(() => { chrome.runtime.getPlatformInfo(() => {}); }, 20000);
+
+  try {
+    sendProgress(tabId, 1, steps);
+    const result = await callWorkerAiImage(imageUrl);
+    sendProgress(tabId, 2, steps, "Checking AI detection", "Finalizing...");
+    await new Promise(r => setTimeout(r, 300));
+    sendToTab(tabId, {
+      action: "showAiImageResult",
+      content: imageUrl,
+      result
+    });
+    logInfo(requestId, "Completed AI image check", { verdict: result.verdict, likelihood: result.aiGeneratedLikelihood });
+  } catch (error) {
+    logError(requestId, "AI image check failed", error);
+    sendToTab(tabId, {
+      action: "showError",
+      error: `Error: ${error.message}`
+    });
+  } finally {
+    clearInterval(keepAlive);
+  }
+}
+
+async function callWorkerAiImage(imageUrl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WORKER_AI_IMAGE_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${WORKER_URL}/api/check-ai-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl }),
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === "AbortError") {
+      throw new Error("AI image check timed out. Please try again.");
+    }
+    throw new Error(`Network error: ${err.message}`);
+  }
+  clearTimeout(timeout);
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`Server returned an invalid response (HTTP ${response.status}). Please try again.`);
+  }
+  if (!response.ok) {
+    throw new Error(data.error || `AI image check failed (${response.status})`);
+  }
+  return parseAiImageResponse(data);
+}
+
+function parseAiImageResponse(data) {
+  const aiGeneratedLikelihood = Math.min(100, Math.max(0, Number(data.aiGeneratedLikelihood) || 0));
+  const verdict = String(data.verdict || "UNCERTAIN").toUpperCase().replace(/\s+/g, "_");
+  const summary = String(data.summary || data.details || "").trim() || "AI-generated likelihood could not be determined.";
+  const details = String(data.details || data.summary || "").trim() || summary;
+  const confidence = Math.min(100, Math.max(0, parseInt(data.confidence, 10) || 70));
+  return {
+    verdict: verdict === "AI_GENERATED" ? "AI_GENERATED" : verdict === "HUMAN_LIKELY" ? "HUMAN_LIKELY" : "UNCERTAIN",
+    aiGeneratedLikelihood,
+    confidence,
+    summary,
+    details,
+    raw: data.raw || null
+  };
 }
 
 // --- Worker API Call ---

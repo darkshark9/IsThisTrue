@@ -2,6 +2,12 @@ name = "is-this-true-api"
 main = "src/index.js"
 compatibility_date = "2024-12-01"
 
-# API key: never commit it. Inject at runtime via Wrangler secrets only.
-# After deploying, run: npx wrangler secret put GEMINI_API_KEY
-# Then paste your key when prompted. It will be encrypted and stored by Cloudflare.
+# Secrets: never commit. Inject at runtime via Wrangler secrets only.
+#
+# Fact-check (Gemini):
+#   npx wrangler secret put GEMINI_API_KEY
+#
+# AI-generated image detection (SightEngine, optional for desktop AI-check):
+#   npx wrangler secret put SIGHTENGINE_API_USER
+#   npx wrangler secret put SIGHTENGINE_API_SECRET
+# Get credentials at https://dashboard.sightengine.com
