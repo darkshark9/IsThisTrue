@@ -1,3 +1,7 @@
+Download the latest version here:
+https://github.com/darkshark9/IsThisTrue/releases
+
+
 # Is This True?
 
 `Is This True?` helps you quickly fact-check text and images you see online.
