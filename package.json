@@ -6,7 +6,8 @@
   "scripts": {
     "generate:key": "node scripts/generate-key.js",
     "build:crx": "node scripts/build-crx.js",
-    "extension-id": "node scripts/print-extension-id.js"
+    "extension-id": "node scripts/print-extension-id.js",
+    "release": "node scripts/release.js"
   },
   "devDependencies": {
     "crx3": "^1.1.3"

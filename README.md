@@ -88,26 +88,25 @@ The Windows installer bundles the Electron desktop app AND auto-registers the Ch
 - GitHub Pages serves from `main` branch, `/docs` folder. The auto-update manifest is at `https://darkshark9.github.io/IsThisTrue/update.xml`.
 - Repo secret `EXTENSION_KEY_PEM` holds the PEM contents for CI signing.
 
-### Cutting a new extension release
+### Cutting a release (both extension + installer)
 
-1. Bump `version` in [`manifest.json`](manifest.json).
-2. Commit and push to `main`.
-3. CI (`.github/workflows/release-extension.yml`) packs a fresh `.crx`, regenerates `docs/update.xml`, and commits both back to `main`.
-4. Within a few hours Chrome polls `update.xml` on every installed machine and pulls the new `.crx` automatically.
+Double-click [`release.bat`](release.bat) (or `release.bat 1.0.6` from a terminal). The script:
 
-To build locally:
+1. Bumps `version` in [`manifest.json`](manifest.json) and [`electron-app/package.json`](electron-app/package.json).
+2. Commits, tags `vX.Y.Z`, and pushes the commit + tag.
+3. CI takes over:
+   - [`Build & publish Chrome extension CRX`](.github/workflows/release-extension.yml) packs the new `.crx`, regenerates `docs/update.xml`, commits both to `main`. Within a few hours every installed Chrome polls `update.xml` and self-updates.
+   - `Build/Release` builds the Windows `.exe` and macOS `.dmg` and attaches them to a [GitHub Release](https://github.com/darkshark9/IsThisTrue/releases) named after the tag.
+
+For an extension-only update (no new installer): bump `manifest.json` only and push to `main` — the CRX workflow runs, the installer workflow doesn't.
+
+To build locally without releasing:
 
 ```sh
 npm install            # one-time
 npm run build:crx      # writes docs/extension/is-this-true-X.Y.Z.crx + docs/update.xml
 npm run extension-id   # prints the extension ID derived from extension-key.pem
 ```
-
-### Cutting a new installer release
-
-1. Bump `version` in [`electron-app/package.json`](electron-app/package.json).
-2. From `electron-app/`: `npm run build:win` → produces `electron-app/dist/*.exe`.
-3. Attach the `.exe` to a [GitHub Release](https://github.com/darkshark9/IsThisTrue/releases). The landing page at `docs/index.html` links to "latest".
 
 ### How the registry hook works
 
