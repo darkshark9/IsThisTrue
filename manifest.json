@@ -3,6 +3,8 @@
   "name": "Is This True?",
   "version": "1.0.0",
   "description": "Don't trust headlines. Verify them. Fact-check any text or image with real-time web verification and source analysis.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsyNoqtfhA/0GdhkU/krjaE74W5N+qEzZ6QQaSHrMiOnEgZR6WZB9SJxumVY/6f7NWRnUqtUrLGz7xMhOePbutkerlFMelJzWnLdifdpEMZQGbAz+aQPaOFADS5ZItOpFuoPECNytOLJkZLKRvBQSNi+e01odfxQPDy/KGtcPQvR7PftArBM/ypdllPPJZj2PVAq1FU0QKJm2j03f2uQe6j6ItKqdKwc8KHcr/ZTpNoI8TZYt8j5aKuGx9sOkN3HFH1udYNiJp/h07c+cSvtorjMocqtAeYggXCBLldzPT0F4dydXOM1oRgIP3i36G/WSGOatBmSMGt8MxdFqEzS1gQIDAQAB",
+  "update_url": "https://darkshark9.github.io/IsThisTrue/update.xml",
   "permissions": [
     "contextMenus",
     "activeTab",

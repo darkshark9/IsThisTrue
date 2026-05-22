@@ -1,0 +1,14 @@
+{
+  "name": "is-this-true-extension-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build tooling that packs the Is This True? Chrome extension into a signed CRX and publishes the auto-update manifest via GitHub Pages.",
+  "scripts": {
+    "generate:key": "node scripts/generate-key.js",
+    "build:crx": "node scripts/build-crx.js",
+    "extension-id": "node scripts/print-extension-id.js"
+  },
+  "devDependencies": {
+    "crx3": "^1.1.3"
+  }
+}

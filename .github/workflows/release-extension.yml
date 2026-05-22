@@ -1,0 +1,71 @@
+name: Build & publish Chrome extension CRX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "manifest.json"
+      - "background.js"
+      - "content.js"
+      - "content.css"
+      - "popup.html"
+      - "popup.css"
+      - "popup.js"
+      - "icons/**"
+      - "scripts/**"
+      - ".github/workflows/release-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-crx
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Write signing key from secret
+        env:
+          KEY: ${{ secrets.EXTENSION_KEY_PEM }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::EXTENSION_KEY_PEM secret is not set. Add the contents of extension-key.pem as a repo secret."
+            exit 1
+          fi
+          printf '%s' "$KEY" > extension-key.pem
+          chmod 600 extension-key.pem
+
+      - name: Pack CRX + update.xml
+        run: npm run build:crx
+
+      - name: Wipe signing key
+        if: always()
+        run: rm -f extension-key.pem
+
+      - name: Commit docs/ if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          if git diff --cached --quiet; then
+            echo "docs/ unchanged — nothing to commit."
+          else
+            VERSION=$(node -p "require('./manifest.json').version")
+            git commit -m "Publish extension CRX v${VERSION}"
+            git push origin HEAD:main
+          fi

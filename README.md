@@ -76,3 +76,46 @@ Read the full policy in `PRIVACY_POLICY.md`.
 ## API worker and AI-image detection
 
 The Cloudflare Worker (`worker/`) proxies fact-check (Gemini) and, optionally, AI-generated image detection (SightEngine). To enable the desktop **Ctrl+Shift+A** AI check, set SightEngine secrets as described in `worker/README.md`.
+
+## Distribution & releases
+
+The Windows installer bundles the Electron desktop app AND auto-registers the Chrome extension via Chrome's `ExtensionInstallForcelist` policy. The extension is hosted from this repo's GitHub Pages site and auto-updates from there.
+
+### One-time setup (already done)
+
+- `extension-key.pem` — RSA-2048 signing key. **Never commit. Back up to a password manager.** Loss of this key means you can never publish updates for the existing extension ID.
+- Extension ID: `kpjclcnjdlghkbhajcpdiabpbceedhdk` (derived from the public key, permanent).
+- GitHub Pages serves from `main` branch, `/docs` folder. The auto-update manifest is at `https://darkshark9.github.io/IsThisTrue/update.xml`.
+- Repo secret `EXTENSION_KEY_PEM` holds the PEM contents for CI signing.
+
+### Cutting a new extension release
+
+1. Bump `version` in [`manifest.json`](manifest.json).
+2. Commit and push to `main`.
+3. CI (`.github/workflows/release-extension.yml`) packs a fresh `.crx`, regenerates `docs/update.xml`, and commits both back to `main`.
+4. Within a few hours Chrome polls `update.xml` on every installed machine and pulls the new `.crx` automatically.
+
+To build locally:
+
+```sh
+npm install            # one-time
+npm run build:crx      # writes docs/extension/is-this-true-X.Y.Z.crx + docs/update.xml
+npm run extension-id   # prints the extension ID derived from extension-key.pem
+```
+
+### Cutting a new installer release
+
+1. Bump `version` in [`electron-app/package.json`](electron-app/package.json).
+2. From `electron-app/`: `npm run build:win` → produces `electron-app/dist/*.exe`.
+3. Attach the `.exe` to a [GitHub Release](https://github.com/darkshark9/IsThisTrue/releases). The landing page at `docs/index.html` links to "latest".
+
+### How the registry hook works
+
+On install, [`electron-app/installer.nsh`](electron-app/installer.nsh) writes:
+
+```
+HKCU\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist
+  "942" = "kpjclcnjdlghkbhajcpdiabpbceedhdk;https://darkshark9.github.io/IsThisTrue/update.xml"
+```
+
+(plus the equivalent under `Policies\Chromium` for Edge/Brave). HKCU avoids the UAC prompt and applies to the installing user. Chrome installs the extension on next launch and shows "Managed by your organization" — expected behavior for any policy-installed extension. Uninstall removes the registry value.
